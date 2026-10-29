@@ -28,7 +28,7 @@ if (!enabled) {
   });
 } else if (!chain.length) {
   test('live scoring tests are skipped (no provider key configured)', (t) => {
-    t.skip('Set GEMINI_API_KEY, GROQ_API_KEY, or OPENROUTER_API_KEY');
+    t.skip('Set DEEPSEEK_API_KEY (or GROQ_API_KEY / OPENROUTER_API_KEY)');
   });
 } else {
   const config = loadConfig();

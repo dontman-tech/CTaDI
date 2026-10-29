@@ -48,7 +48,8 @@ optional database.
                                            │  JSON over HTTP
                     ┌──────────────────────▼────────────────────────┐
    admin  ◄─────────►  Node HTTP server (src/server.js)              │
-   (email)          │                                                 │
+   (email)          │   — locally: long-running process               │
+                    │   — Vercel:  api/index.js, one serverless fn    │
                     │   /api/submit    validate → store → score       │
                     │   /api/status    public status view             │
                     │   /api/decision  verify signed token → record   │
@@ -58,8 +59,8 @@ optional database.
                         │          │          │          │
               ┌─────────▼──┐  ┌────▼─────┐ ┌──▼───────┐ ┌▼──────────────┐
               │  store     │  │ scorer   │ │ mailer   │ │ token signer  │
-              │ sqlite     │  │ Gemini   │ │ Resend   │ │ HMAC-SHA256   │
-              │ json       │  │ ↓ Groq   │ │ Brevo    │ │ approve/reject│
+              │ json       │  │ DeepSeek │ │ Resend   │ │ HMAC-SHA256   │
+              │ sqlite     │  │ ↓ Groq   │ │ Brevo    │ │ approve/reject│
               │ supabase   │  │ ↓ OpenRtr│ │ Gmail    │ │ one-click     │
               └────────────┘  └──────────┘ └──────────┘ └───────────────┘
                                  failover
@@ -82,8 +83,13 @@ optional database.
   simple HTTP API. `EMAIL_DRIVER=console` prints emails to the terminal so you
   can develop without any account at all.
 - **Provider failover for the LLM.** Free tiers have rate limits and occasional
-  outages. Chaining Gemini → Groq → OpenRouter means a single provider's bad
+  outages. Chaining DeepSeek → Groq → OpenRouter means a single provider's bad
   day does not stop onboarding.
+- **The same code runs as a server or a serverless function.** `src/server.js`
+  is the local entrypoint; `api/index.js` is the Vercel entrypoint. Both call
+  the identical routing and pipeline code, so what you test locally is what runs
+  in production. Vercel uses one catch-all function rather than one per route,
+  which means fewer cold starts and a warm instance reused across requests.
 
 ### Request lifecycle
 
@@ -107,41 +113,49 @@ re-scored by calling it again.
 
 ## 2. Choosing the LLM
 
-Three free options were compared. Figures below are from the providers' own
+Four free options were compared. Figures are from the providers' own
 documentation (verified October 2026) and should be re-checked when you deploy,
 because free tiers change.
 
-| | **Google Gemini** (`gemini-2.5-flash`) | **Groq** (`openai/gpt-oss-120b`) | **OpenRouter** (`google/gemma-4-31b-it:free`) |
-|---|---|---|---|
-| Free tier | Yes, "free of charge" input and output on Flash models | Yes, Free plan | Yes, `:free` model variants |
-| Requests / day | Generous (see AI Studio rate-limit page for the current number) | 1,000 RPD | 50 RPD under 10 credits purchased, 1,000 RPD above |
-| Requests / minute | Model dependent (20–30 typical) | 30 RPM | 20 RPM |
-| Tokens / minute | Model dependent | 8,000 TPM | Provider dependent |
-| Output quality | Strong reasoning, reliable JSON | Good, very fast | Varies by model |
-| Structured output | Native `responseSchema` (JSON schema enforced) | JSON mode | JSON mode |
-| Reliability | High | High | Variable — free endpoints are shared |
-| Notes | Best quality and limits. Google may use free-tier data to improve products, so a data-processing agreement matters if your answers are sensitive. | Fastest, and the free plan is predictable. Strong second choice. | Useful as a last resort; free model availability shifts. |
+| | **DeepSeek** (`deepseek-v4-flash`) | **Groq** (`openai/gpt-oss-120b`) | **OpenRouter** (`google/gemma-4-31b-it:free`) | **Google Gemini** (`gemini-2.5-flash`) |
+|---|---|---|---|---|
+| Free tier | Yes — promotional free access on the Flash model | Yes, Free plan | Yes, `:free` model variants | Yes, "free of charge" input and output on Flash models |
+| Requests / day | Generous (see the DeepSeek platform page) | 1,000 RPD | 50 RPD under 10 credits purchased, 1,000 RPD above | Generous (see AI Studio rate-limit page) |
+| Requests / minute | Rate-limited but comfortable for one-at-a-time submissions | 30 RPM | 20 RPM | Model dependent (20–30 typical) |
+| Tokens / minute | Model dependent | 8,000 TPM | Provider dependent | Model dependent |
+| Output quality | Strong reasoning and instruction-following; reliably valid JSON | Good, very fast | Varies by model | Strong reasoning, reliable JSON |
+| Structured output | OpenAI-compatible `response_format: json_object` | JSON mode | JSON mode | Native `responseSchema` (schema enforced) |
+| API shape | OpenAI-compatible chat completions | OpenAI-compatible | OpenAI-compatible | Google-native |
+| Reliability | High | High | Variable — free endpoints are shared | High |
+| Notes | **Chosen primary.** One adapter covers DeepSeek, Groq and OpenRouter, since all three speak the OpenAI chat-completions dialect. | Fastest, and the free plan is predictable. Strong first fallback. | Useful as a last resort; free model availability shifts. | Good quality, but a Google-native API means a second adapter to maintain. Kept as a documented alternative, not wired in. |
 
-**Recommendation: Gemini `gemini-2.5-flash` primary, Groq `openai/gpt-oss-120b`
-fallback, OpenRouter free model as a last resort.** That is the order
-`src/llm/providers.js` uses, and you can reorder it or drop entries by simply
-not setting the corresponding key.
+**Recommendation: DeepSeek `deepseek-v4-flash` primary, Groq
+`openai/gpt-oss-120b` fallback, OpenRouter free model as a last resort.** That
+is the order `src/llm/providers.js` uses, and you can reorder it or drop entries
+by simply not setting the corresponding key.
+
+Why DeepSeek rather than Gemini: DeepSeek, Groq and OpenRouter all expose the
+same OpenAI-compatible `/chat/completions` interface, so a single adapter in
+`src/llm/providers.js` serves all three. Gemini needs its own request/response
+shape and a schema-translation helper, which is a second code path to keep
+correct for no gain in this use case. Fewer adapters means less to break.
 
 Two caveats worth knowing:
 
-- **Gemini's free tier is used to improve Google's products.** Membership
-  applications contain personal data. If that is unacceptable, either run
-  Groq first or put a paid key behind `OPENAI_COMPAT_*`. The prompt already
-  tells the model not to score on personal characteristics, but the answers are
-  still personal data.
+- **Free tiers and personal data.** Membership applications contain personal
+  data. Check each provider's current terms before sending real answers. The
+  prompt already instructs the model not to score on personal characteristics,
+  but the answers themselves are still personal data.
 - **Groq's free plan is 8,000 tokens per minute.** A long application with a
   full rubric is a few thousand tokens, so one request per minute is
   comfortable; a burst will hit the limit and fail over. That is handled.
 
-Failover is automatic and invisible to the applicant: if Gemini returns a 429,
-a 5xx, a timeout, or unparseable JSON, the scorer retries once and then moves
-to the next provider. If every provider fails, the application is **parked**,
-not lost, and can be re-scored with one call to `processApplication`.
+Failover is automatic and invisible to the applicant: if DeepSeek returns a
+401, a 429, a 5xx, a timeout, or unparseable JSON, the scorer retries once and
+then moves to the next provider. A test in `test/serverless.test.js` proves a
+401 from the primary falls through to the next provider. If every provider
+fails, the application is **parked**, not lost, and is re-scored automatically
+by the `/api/cron/rescore` job.
 
 ---
 
@@ -328,18 +342,20 @@ ctadi.config.json      weights, threshold, ideal member profile, all applicant m
 form.json              the full form: sections, roles, questions
 package.json           scripts only; no runtime dependencies
 
+api/
+  index.js             Vercel entrypoint: one catch-all serverless function
 src/
-  server.js            HTTP server and page routes
+  server.js            local HTTP server (long-running process)
   pipeline.js          submit → score → threshold → notify → decide
   lib/
     config.js          loads and validates the config files
     form.js            form lookup, submission validation and normalisation
     util.js            text cleaning, HTML escaping, injection scan, crypto helpers
     tokens.js          HMAC-signed approve/reject tokens
-    http.js            JSON helpers, body reader, rate limiter
+    http.js            JSON helpers, body reader, rate limiter (in-process or Upstash)
   llm/
     prompt.js          builds the system and user prompts, owns the JSON schema
-    providers.js       Gemini, Groq, OpenRouter, and any OpenAI-compatible endpoint
+    providers.js       DeepSeek, Groq, OpenRouter, and any OpenAI-compatible endpoint
     scorer.js          failover chain, retries, validation
     validate.js        JSON extraction and rubric validation
   email/
@@ -354,9 +370,12 @@ src/
 
 public/
   index.html form.js    the application form
-  status.js            the applicant status page
-  decision.js          the approve/reject confirmation page
+  status/index.html     the applicant status page (static)
+  decision/index.html   the approve/reject confirmation page (static)
+  status.js decision.js the scripts those pages load
   styles.css
+
+vercel.json            Vercel function config, rewrites, cron, and security headers
 
 samples/applicants.json  strong, borderline, weak, and injection samples
 scripts/run-samples.js   runs the samples through the pipeline
@@ -369,7 +388,11 @@ test/                    the test suite (see below)
 
 ### Prerequisites
 
-Node.js **22.5 or newer** (for `node:sqlite`). Check with `node --version`.
+Node.js **22.5 or newer**. Check with `node --version`.
+
+For a Vercel deployment you also need a Vercel account (free Hobby plan) and a
+hosted Postgres — Supabase's free tier is the one this guide uses. See
+[Option C](#option-c--deploy-to-vercel-production).
 
 ### Option A — run locally in two minutes
 
@@ -391,14 +414,16 @@ CTaDI onboarding portal listening on http://localhost:3000
   storage driver : sqlite
   email driver   : console
   threshold      : 60
-  llm providers  : NONE CONFIGURED — set GEMINI_API_KEY / GROQ_API_KEY / OPENROUTER_API_KEY
+  llm providers  : NONE CONFIGURED — set DEEPSEEK_API_KEY (or GROQ_API_KEY / OPENROUTER_API_KEY)
 ```
 
 Submit the form, then check the terminal — the admin digest is printed there.
+Without any API key the submission is still stored and the admin digest still
+prints, but scoring is skipped and the application is parked.
 
 ### Option B — wire up real scoring and email
 
-1. **Get a Gemini key** at <https://aistudio.google.com/apikey> (free tier).
+1. **Get a DeepSeek key** at <https://platform.deepseek.com/api_keys>.
 2. **Get a Groq key** at <https://console.groq.com/keys> (free plan) as a
    fallback.
 3. **Get an email key.** Resend (<https://resend.com>) gives 3,000 emails a
@@ -417,33 +442,123 @@ Submit the form, then check the terminal — the admin digest is printed there.
    FROM_EMAIL=CTaDI Onboarding <onboarding@your-domain.org>
    EMAIL_DRIVER=resend
    RESEND_API_KEY=re_...
-   GEMINI_API_KEY=...
+   DEEPSEEK_API_KEY=sk-...
+   DEEPSEEK_MODEL=deepseek-v4-flash
    GROQ_API_KEY=...
    APPROVAL_TOKEN_SECRET=<the value from step 4>
    COMMUNITY_INVITE_URL=https://community.example.org/join/ctadi
    ```
 
-6. **Restart.** `/api/health` now lists the providers, in failover order.
+6. **Restart.** `/api/health` now lists the providers, in failover order. A
+   quick way to confirm the key actually works before trusting it with real
+   applications:
 
-### Option C — deploy to a free host
+   ```bash
+   CTADI_LIVE_TESTS=1 npm run test:live
+   ```
 
-Any host that runs Node works. Render, Railway, and Fly.io all have free or
-near-free tiers.
+   That runs the strong/borderline/weak samples against the real model and
+   asserts the strong one is shortlisted and the weak one is not.
 
-1. Push the repository to GitHub.
-2. Create a web service from the repo.
-3. Build command: *(none)*. Start command: `npm start`.
-4. Set the environment variables from `.env` in the host's dashboard. **Never
-   commit them.**
-5. Set `PUBLIC_BASE_URL` to the deployed URL, so the approve and reject links
-   in the admin email point at the live portal.
-6. Set `NODE_ENV=production`. The service refuses to start without
-   `APPROVAL_TOKEN_SECRET` when it is set.
+### Option C — deploy to Vercel (production)
 
-Two things to know about free hosts: their disks are usually ephemeral, so
-SQLite data is lost on redeploy — use Supabase (`STORAGE_DRIVER=supabase`) if
-that matters. And they usually sleep when idle, so the first submission after
-a quiet spell is slow.
+Vercel is the recommended production host: it is free for this traffic level,
+deploys straight from GitHub, terminates TLS, and provides cron and secrets
+management. It is serverless, which changes three things:
+
+| Local server | On Vercel | Why |
+|---|---|---|
+| `node:sqlite` file | Supabase (hosted Postgres) | A serverless filesystem is read-only except `/tmp` and does not persist between invocations, so a SQLite file is lost on every deploy and not shared between instances. |
+| One long-running process | One catch-all serverless function | Fewer cold starts, and a warm instance is reused across routes. See `api/index.js`. |
+| In-process rate-limit map | Upstash Redis (or Supabase RPC) | Each invocation may be a fresh instance, so an in-process counter can be reset by getting a cold start. The code falls back to in-process if no backend is configured. |
+
+**1. Create the database.** In Supabase (<https://supabase.com>, free tier),
+open the SQL editor and run the schema in
+[Switching to Supabase](#switching-to-supabase) below. Then copy the project
+URL and the **service-role** key from Project Settings → API.
+
+**2. Push the repository to GitHub** (the code is already structured for it).
+
+**3. Import the project in Vercel** at <https://vercel.com/new>. Vercel detects
+`vercel.json` and uses it:
+
+- no build step and no install step (the project has zero runtime dependencies);
+- `api/index.js` as a single catch-all function, 60s max duration;
+- `rewrites` sending every `/api/*` request to that function;
+- a cron job hitting `/api/cron/rescore` every six hours;
+- security headers on every response.
+
+**4. Set the environment variables** in Vercel → Settings → Environment
+Variables. At minimum:
+
+| Variable | Value |
+|---|---|
+| `PUBLIC_BASE_URL` | your production URL, e.g. `https://ctadi.vercel.app` |
+| `ADMIN_EMAIL` | where the review digest goes |
+| `FROM_EMAIL` | a verified sender for your email provider |
+| `EMAIL_DRIVER` | `resend` (or `brevo`) — avoid Gmail on serverless, some hosts block outbound SMTP |
+| `RESEND_API_KEY` | from Resend |
+| `DEEPSEEK_API_KEY` | from the DeepSeek platform |
+| `DEEPSEEK_MODEL` | `deepseek-v4-flash` |
+| `SUPABASE_URL` | your Supabase project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | the service-role key (**server-side only**) |
+| `STORAGE_DRIVER` | `supabase` |
+| `APPROVAL_TOKEN_SECRET` | 32 random bytes as hex |
+| `COMMUNITY_INVITE_URL` | the invite link approved applicants receive |
+| `ADMIN_API_TOKEN` | protects `/api/admin/applications` |
+| `CRON_SECRET` | protects `/api/cron/rescore`; Vercel sends it automatically |
+| `RATE_LIMIT_BACKEND` | `upstash` (recommended) or `supabase` |
+
+`PUBLIC_BASE_URL` matters: it is what the approve and reject links in the admin
+email are built from. If it is wrong, those links point at the wrong host.
+
+**5. Deploy, then smoke-test the live URL:**
+
+```bash
+curl https://your-app.vercel.app/api/health
+```
+
+You should see `"storage":"supabase"` and `deepseek` first in the provider
+list. Then submit the form once and confirm the admin digest arrives.
+
+**6. (Recommended) distributed rate limiting.** Create a free Upstash Redis
+database (<https://upstash.com>), copy the REST URL and token, and set
+`RATE_LIMIT_BACKEND=upstash`, `UPSTASH_REDIS_REST_URL`, and
+`UPSTASH_REDIS_REST_TOKEN`. Without this the limiter still works, but only
+per warm instance.
+
+If you would rather use Supabase for the limiter, create this function and set
+`RATE_LIMIT_BACKEND=supabase`:
+
+```sql
+create table if not exists rate_limits (
+  key text primary key,
+  window_start timestamptz not null default now(),
+  count int not null default 0
+);
+
+create or replace function ctadi_rate_limit(p_key text, p_window_seconds int)
+returns int language plpgsql as $$
+declare new_count int;
+begin
+  insert into rate_limits (key, window_start, count)
+  values (p_key, now(), 1)
+  on conflict (key) do update set
+    count = case
+      when rate_limits.window_start < now() - make_interval(secs => p_window_seconds)
+      then 1 else rate_limits.count + 1 end,
+    window_start = case
+      when rate_limits.window_start < now() - make_interval(secs => p_window_seconds)
+      then now() else rate_limits.window_start end
+  returning count into new_count;
+  return new_count;
+end $$;
+```
+
+**Deploying elsewhere.** Any Node host works, but a persistent-disk host (Render,
+Railway, Fly.io) suits the SQLite driver better. Use `npm start` as the start
+command, no build command, and the same environment variables with
+`STORAGE_DRIVER=sqlite`.
 
 ### Switching to Supabase
 
@@ -522,9 +637,10 @@ Run the whole suite with:
 npm test
 ```
 
-All 60 tests pass (59 run offline, 1 live test skipped) with no network access, no API keys, and no accounts. The
-suite uses an in-memory store and a fake provider, and the integration test
-points the real provider adapter at a local fake upstream.
+All 84 tests pass (83 run offline, 1 live test skipped) with no network access,
+no API keys, and no accounts. The suite uses an in-memory store and a fake
+provider, and the integration and Vercel tests point the real provider adapter
+at a local fake upstream.
 
 ### What the suite covers
 
@@ -540,6 +656,8 @@ points the real provider adapter at a local fake upstream.
 | Pipeline | above threshold shortlists and emails the admin; below threshold does not; the threshold is inclusive; a scoring failure parks the application; duplicates are refused; approve is idempotent; a decision cannot be flipped; the digest links are bound to the right application; injection does not change the score; a parked application can be rescued; the audit trail is written; applicant HTML is escaped |
 | HTTP | health, form, and index routes; invalid submissions rejected; valid submissions accepted; the status view never leaks the score; forged tokens rejected; the full approve flow over HTTP; the decision page renders; directory traversal blocked; the admin list works |
 | End-to-end | the real adapter calls the upstream with the right body, temperature 0, and marked answers; the digest arrives with a working link; approve and reject both work end to end; a garbage response parks the application; a 429 is retried |
+| Vercel | the DeepSeek adapter is called with the configured base URL and bearer key; a pre-parsed `req.body` is accepted; links use `PUBLIC_BASE_URL`; the full approve flow works through the serverless handler; `/api/health` reports DeepSeek; unknown `/api` routes return JSON 404; `/api/cron/rescore` requires `CRON_SECRET`; a scoring failure parks rather than errors |
+| Serverless | the provider chain order is DeepSeek → Groq → OpenRouter → custom; a trailing slash in the base URL does not double up; a **401 from the primary fails over to the next provider**; the scoring time budget stops a slow provider; the Upstash limiter enforces a shared counter; a broken limiter fails open; the store defaults to JSON locally and Supabase on Vercel; an unknown driver errors helpfully; `getStore` is memoised |
 
 ### The three sample applicants
 
@@ -600,7 +718,7 @@ carry the injection warning if the application ever reaches it.
 The live tests check scoring **quality**, which the offline suite cannot:
 
 ```bash
-CTADI_LIVE_TESTS=1 GEMINI_API_KEY=... npm run test:live
+CTADI_LIVE_TESTS=1 DEEPSEEK_API_KEY=sk-... npm run test:live
 ```
 
 They assert that the strong applicant is shortlisted, the weak one is not, the
@@ -655,14 +773,18 @@ See `.env.example` for the annotated list. The important ones:
 | `PUBLIC_BASE_URL` | Builds the absolute approve/reject links |
 | `ADMIN_EMAIL` | Where the digest goes |
 | `EMAIL_DRIVER` | `console`, `resend`, `brevo`, or `gmail` |
-| `STORAGE_DRIVER` | `sqlite`, `json`, or `supabase` |
+| `STORAGE_DRIVER` | `sqlite`, `json`, or `supabase`. Unset → `supabase` on Vercel, `json` locally |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Required for the Supabase driver (**server-side only**) |
 | `APPROVAL_TOKEN_SECRET` | Signs the one-click links. **Required in production** |
-| `GEMINI_API_KEY`, `GROQ_API_KEY`, `OPENROUTER_API_KEY` | LLM providers, in failover order |
-| `LLM_MAX_RETRIES`, `LLM_TIMEOUT_MS`, `LLM_TEMPERATURE` | Scoring behaviour |
+| `DEEPSEEK_API_KEY`, `DEEPSEEK_MODEL`, `DEEPSEEK_API_BASE_URL` | Primary LLM provider |
+| `GROQ_API_KEY`, `OPENROUTER_API_KEY`, `OPENAI_COMPAT_*` | Fallback providers, in failover order |
+| `LLM_MAX_RETRIES`, `LLM_TIMEOUT_MS`, `LLM_TOTAL_BUDGET_MS`, `LLM_TEMPERATURE` | Scoring behaviour. Keep the budget below your function timeout |
 | `COMMUNITY_INVITE_URL` | The link an approved applicant sees |
 | `EMAIL_APPLICANT_ON_APPROVAL` | Also email the invite, not just show it |
 | `ADMIN_API_TOKEN` | Protects `/api/admin/applications` |
+| `CRON_SECRET` | Protects `/api/cron/rescore` |
 | `SUBMIT_RATE_LIMIT_PER_HOUR` | Per-IP submission cap |
+| `RATE_LIMIT_BACKEND`, `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Distributed rate limiting |
 
 ---
 
@@ -703,15 +825,28 @@ rejected applicant sees a polite closing message, not a number.
 
 **Rate limiting.** `/api/submit` is limited per IP
 (`SUBMIT_RATE_LIMIT_PER_HOUR`, default 5) and duplicate active applications
-from the same email are refused. The limiter is in-process, which is correct
-for a single instance; behind multiple instances put a shared limiter in front.
+from the same email are refused. On a single instance the in-process limiter is
+exact. On serverless it is per warm instance, so a caller could in principle
+reset the window by landing on a cold instance — set `RATE_LIMIT_BACKEND` to
+`upstash` (or `supabase`) for a shared counter. If the distributed backend is
+unreachable the limiter **fails open** rather than blocking genuine applicants;
+that trade-off is deliberate and logged.
+
+**Serverless specifics.** Three things differ on Vercel, and each is handled
+rather than assumed. The store driver is imported lazily, so an unused driver
+(for example `node:sqlite`) can never crash a cold start. The request body is
+read from the platform's pre-parsed `req.body`, because the underlying stream is
+already drained — reading it would hang the request. And scoring runs inside a
+total time budget (`LLM_TOTAL_BUDGET_MS`, default 45s) shorter than the function
+timeout, so a slow provider parks the application cleanly instead of the
+platform killing the function mid-request.
 
 **Data protection.** You are storing personal data and scoring it with a
 third-party model. Before going live: tell applicants that automated tooling
 assists the first pass and that a human reads shortlisted applications (the
 form already asks for consent to this), check your provider's data-use terms
-(Google's free tier may use inputs to improve their products), and keep the
-retention period as short as your review process allows.
+(free tiers in particular may use inputs to improve their products), and keep
+the retention period as short as your review process allows.
 
 ---
 

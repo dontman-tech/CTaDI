@@ -22,12 +22,20 @@ import { providerChain, llmTimeoutMs } from './providers.js';
 export async function scoreApplication(application, { config = loadConfig(), providers } = {}) {
   const chain = providers ?? providerChain();
   if (!chain.length) {
-    throw new ScoringError('No LLM provider is configured. Set GEMINI_API_KEY, GROQ_API_KEY, or OPENROUTER_API_KEY.', []);
+    throw new ScoringError(
+      'No LLM provider is configured. Set DEEPSEEK_API_KEY (or GROQ_API_KEY / OPENROUTER_API_KEY).',
+      [],
+    );
   }
 
   const temperature = Number(process.env.LLM_TEMPERATURE ?? config.scoring.temperature ?? 0);
   const maxRetries = envInt('LLM_MAX_RETRIES', config.scoring.max_retries_per_provider ?? 1);
   const timeoutMs = llmTimeoutMs();
+  // Hard ceiling on the whole scoring attempt. On serverless the platform kills
+  // the function at its own limit; stopping first lets us park the application
+  // cleanly and return a response instead of being terminated mid-flight.
+  const budgetMs = envInt('LLM_TOTAL_BUDGET_MS', 45000);
+  const deadline = Date.now() + budgetMs;
   const system = buildSystemPrompt(config);
   const user = buildUserPrompt(application, config);
 
@@ -36,13 +44,18 @@ export async function scoreApplication(application, { config = loadConfig(), pro
 
   for (const provider of chain) {
     for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 1000) {
+        attempts.push({ provider: provider.name, model: provider.model, attempt, ok: false, reason: 'time_budget_exhausted', ms: 0 });
+        throw new ScoringError('Scoring exceeded its time budget before a provider returned a valid evaluation.', attempts);
+      }
       const t0 = Date.now();
       try {
         const text = await provider.call({
           system,
           user,
           temperature,
-          timeoutMs,
+          timeoutMs: Math.min(timeoutMs, remaining),
           jsonSchema: EVALUATION_JSON_SCHEMA,
         });
         const parsed = extractJson(text);

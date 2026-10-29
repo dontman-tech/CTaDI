@@ -15,7 +15,8 @@ import { scoreApplication, ScoringError } from './llm/scorer.js';
  *   recordDecision    -> store -> (community link | closing message)
  */
 
-export async function submitApplication(rawPayload, { store = getStore(), mailer, scorer, config = loadConfig() } = {}) {
+export async function submitApplication(rawPayload, { store, mailer, scorer, config = loadConfig() } = {}) {
+  store = store ?? (await getStore());
   const { ok, errors, application } = validateSubmission(rawPayload);
   if (!ok) return { ok: false, status: 400, errors };
 
@@ -66,7 +67,8 @@ export async function submitApplication(rawPayload, { store = getStore(), mailer
  * is shortlisted. Safe to re-run, which is how a parked application is rescued
  * after a provider outage.
  */
-export async function processApplication(id, { store = getStore(), mailer, scorer, config = loadConfig() } = {}) {
+export async function processApplication(id, { store, mailer, scorer, config = loadConfig() } = {}) {
+  store = store ?? (await getStore());
   const record = await store.get(id);
   if (!record) return { ok: false, reason: 'not_found' };
 
@@ -124,7 +126,8 @@ export async function processApplication(id, { store = getStore(), mailer, score
   };
 }
 
-export async function notifyAdmin(id, { store = getStore(), mailer, config = loadConfig() } = {}) {
+export async function notifyAdmin(id, { store, mailer, config = loadConfig() } = {}) {
+  store = store ?? (await getStore());
   const record = await store.get(id);
   if (!record?.evaluation) return false;
   const m = mailer ?? getMailer();
@@ -147,7 +150,8 @@ export async function notifyAdmin(id, { store = getStore(), mailer, config = loa
   return true;
 }
 
-export async function sendApplicantStatus(record, kind, { store = getStore(), mailer, config = loadConfig() } = {}) {
+export async function sendApplicantStatus(record, kind, { store, mailer, config = loadConfig() } = {}) {
+  store = store ?? (await getStore());
   const m = mailer ?? getMailer();
   const messages = config.messages;
   const a = record.application.identity;
@@ -195,7 +199,8 @@ export async function sendApplicantStatus(record, kind, { store = getStore(), ma
  * Record a human decision. This is the only place a decision is written, and
  * it is guarded so a second click cannot flip an existing decision.
  */
-export async function recordDecision(id, decision, { store = getStore(), mailer, config = loadConfig(), decidedBy = 'admin_link' } = {}) {
+export async function recordDecision(id, decision, { store, mailer, config = loadConfig(), decidedBy = 'admin_link' } = {}) {
+  store = store ?? (await getStore());
   const record = await store.get(id);
   if (!record) return { ok: false, status: 404, reason: 'not_found' };
   if (decision !== 'approve' && decision !== 'reject') {

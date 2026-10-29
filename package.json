@@ -8,11 +8,12 @@
     "node": ">=22.5.0"
   },
   "scripts": {
-    "start": "node src/server.js",
-    "dev": "node --watch src/server.js",
+    "start": "node --env-file-if-exists=.env src/server.js",
+    "dev": "node --env-file-if-exists=.env --watch src/server.js",
     "test": "node --test \"test/*.test.js\"",
-    "test:live": "CTADI_LIVE_TESTS=1 node --test test/live.llm.test.js",
-    "sample": "node scripts/run-samples.js",
+    "test:live": "node --env-file-if-exists=.env --test test/live.llm.test.js",
+    "sample": "node --env-file-if-exists=.env scripts/run-samples.js",
     "sample:offline": "node scripts/run-samples.js --offline"
-  }
+  },
+  "dependencies": {}
 }

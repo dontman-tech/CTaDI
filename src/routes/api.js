@@ -1,11 +1,11 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { loadConfig, env, ROOT } from '../lib/config.js';
-import { sendJson, sendHtml, readJsonBody, rateLimit, clientIp } from '../lib/http.js';
+import { sendJson, sendHtml, readJsonBody, checkRateLimit, clientIp } from '../lib/http.js';
 import { verifyDecisionToken } from '../lib/tokens.js';
 import { escapeHtml } from '../lib/util.js';
 import { getStore } from '../store/index.js';
-import { submitApplication, recordDecision, publicStatus } from '../pipeline.js';
+import { submitApplication, recordDecision, publicStatus, processApplication } from '../pipeline.js';
 import { roleOptions } from '../lib/form.js';
 import { providerChain } from '../llm/providers.js';
 
@@ -48,9 +48,10 @@ export async function handleApi(req, res, url) {
   // GET /api/health — liveness plus which providers are wired up.
   if (req.method === 'GET' && p === '/api/health') {
     const cfg = loadConfig();
+    const store = await getStore();
     return sendJson(res, 200, {
       ok: true,
-      storage: getStore().driver,
+      storage: store.driver,
       email: env('EMAIL_DRIVER', 'console'),
       threshold: cfg.scoring.shortlist_threshold,
       providers: providerChain().map((x) => ({ name: x.name, model: x.model })),
@@ -60,7 +61,7 @@ export async function handleApi(req, res, url) {
 
   // POST /api/submit — the applicant's form submission.
   if (req.method === 'POST' && p === '/api/submit') {
-    const limit = rateLimit(`submit:${clientIp(req)}`);
+    const limit = await checkRateLimit(`submit:${clientIp(req)}`);
     if (!limit.allowed) {
       return sendJson(res, 429, { ok: false, error: 'Too many submissions from this address. Please try again later.' });
     }
@@ -90,7 +91,8 @@ export async function handleApi(req, res, url) {
   // GET /api/status?id=... — the portal status page data.
   if (req.method === 'GET' && p === '/api/status') {
     const id = url.searchParams.get('id') ?? '';
-    const record = await getStore().get(id);
+    const store = await getStore();
+    const record = await store.get(id);
     if (!record) return sendJson(res, 404, { ok: false, error: 'Application not found.' });
     return sendJson(res, 200, { ok: true, status: publicStatus(record) });
   }
@@ -124,6 +126,29 @@ export async function handleApi(req, res, url) {
     }
   }
 
+  // GET|POST /api/cron/rescore — retry applications parked by a provider outage.
+  // Vercel Cron sends a GET with `Authorization: Bearer $CRON_SECRET`.
+  if ((req.method === 'GET' || req.method === 'POST') && p === '/api/cron/rescore') {
+    const secret = env('CRON_SECRET');
+    if (secret) {
+      const auth = req.headers['authorization'] ?? '';
+      const provided = auth.startsWith('Bearer ') ? auth.slice(7) : url.searchParams.get('secret');
+      if (provided !== secret) return sendJson(res, 401, { ok: false, error: 'Unauthorised.' });
+    }
+    const store = await getStore();
+    const parked = await store.list({ status: 'parked', limit: 20 });
+    const results = [];
+    for (const record of parked) {
+      try {
+        const outcome = await processApplication(record.id, { store });
+        results.push({ id: record.id, ok: outcome.ok, total_score: outcome.total_score ?? null, shortlisted: outcome.shortlisted ?? null });
+      } catch (err) {
+        results.push({ id: record.id, ok: false, error: String(err.message ?? err) });
+      }
+    }
+    return sendJson(res, 200, { ok: true, attempted: parked.length, results });
+  }
+
   // GET /api/admin/applications — simple list for the admin (protect in prod).
   if (req.method === 'GET' && p === '/api/admin/applications') {
     const token = env('ADMIN_API_TOKEN');
@@ -132,7 +157,8 @@ export async function handleApi(req, res, url) {
       if (provided !== token) return sendJson(res, 401, { ok: false, error: 'Unauthorised.' });
     }
     const status = url.searchParams.get('status') ?? undefined;
-    const records = await getStore().list({ status, limit: 200 });
+    const store = await getStore();
+    const records = await store.list({ status, limit: 200 });
     return sendJson(res, 200, {
       ok: true,
       count: records.length,
@@ -167,12 +193,20 @@ const MIME = {
 
 /** Serve files from /public. No directory traversal. */
 export function serveStatic(req, res, url) {
-  const rel = url.pathname === '/' ? '/index.html' : url.pathname;
-  const resolved = path.resolve(ROOT, 'public', `.${rel}`);
   const publicDir = path.resolve(ROOT, 'public');
+  const rel = url.pathname === '/' ? '/index.html' : url.pathname;
+  let resolved = path.resolve(publicDir, `.${rel}`);
+
+  // Guard against traversal before touching the filesystem.
   if (!resolved.startsWith(publicDir + path.sep) && resolved !== publicDir) {
     return false;
   }
+
+  // Resolve a directory to its index.html, so /status serves public/status/index.html.
+  if (fs.existsSync(resolved) && fs.statSync(resolved).isDirectory()) {
+    resolved = path.join(resolved, 'index.html');
+  }
+
   if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) return false;
   const ext = path.extname(resolved).toLowerCase();
   const body = fs.readFileSync(resolved);

@@ -37,63 +37,7 @@ async function postJson(url, headers, body, timeoutMs) {
   }
 }
 
-function geminiProvider() {
-  const apiKey = env('GEMINI_API_KEY');
-  const model = env('GEMINI_MODEL', 'gemini-2.5-flash');
-  return {
-    name: 'gemini',
-    model,
-    isConfigured: () => Boolean(apiKey),
-    async call({ system, user, temperature, timeoutMs, jsonSchema }) {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
-      const generationConfig = {
-        temperature,
-        responseMimeType: 'application/json',
-        ...(jsonSchema ? { responseSchema: toGeminiSchema(jsonSchema) } : {}),
-      };
-      const data = await postJson(
-        url,
-        { 'x-goog-api-key': apiKey },
-        {
-          systemInstruction: { parts: [{ text: system }] },
-          contents: [{ role: 'user', parts: [{ text: user + JSON_INSTRUCTION }] }],
-          generationConfig,
-        },
-        timeoutMs,
-      );
-      const parts = data?.candidates?.[0]?.content?.parts ?? [];
-      const text = parts.map((p) => p.text ?? '').join('');
-      if (!text) {
-        const err = new Error(`empty response from gemini (finishReason=${data?.candidates?.[0]?.finishReason})`);
-        err.retryable = true;
-        throw err;
-      }
-      return text;
-    },
-  };
-}
-
-/** Convert a subset of JSON Schema to Gemini's responseSchema dialect. */
-function toGeminiSchema(schema) {
-  if (Array.isArray(schema)) return schema.map(toGeminiSchema);
-  if (!schema || typeof schema !== 'object') return schema;
-  const out = {};
-  for (const [k, v] of Object.entries(schema)) {
-    if (k === 'additionalProperties' || k === '$schema' || k === 'minLength') continue;
-    if (k === 'type' && typeof v === 'string') {
-      out.type = v.toUpperCase();
-      continue;
-    }
-    if (k === 'enum' || k === 'required') {
-      out[k] = v;
-      continue;
-    }
-    out[k] = toGeminiSchema(v);
-  }
-  return out;
-}
-
-function openAiCompatible({ name, baseUrl, apiKey, model, extraHeaders = {} }) {
+function openAiCompatible({ name, baseUrl, apiKey, model, extraHeaders = {}, supportsJsonMode = true }) {
   return {
     name,
     model,
@@ -106,11 +50,10 @@ function openAiCompatible({ name, baseUrl, apiKey, model, extraHeaders = {} }) {
           { role: 'system', content: system },
           { role: 'user', content: user + JSON_INSTRUCTION },
         ],
-        response_format: { type: 'json_object' },
       };
       // Ask for schema-constrained output where the provider supports it, but
       // never depend on it: some free endpoints reject the field outright.
-      if (jsonSchema) body.response_format = { type: 'json_object' };
+      if (supportsJsonMode) body.response_format = { type: 'json_object' };
       const data = await postJson(
         `${String(baseUrl).replace(/\/+$/, '')}/chat/completions`,
         { authorization: `Bearer ${apiKey}`, ...extraHeaders },
@@ -126,6 +69,20 @@ function openAiCompatible({ name, baseUrl, apiKey, model, extraHeaders = {} }) {
       return text;
     },
   };
+}
+
+/**
+ * DeepSeek. Primary provider. Speaks the OpenAI chat-completions dialect, so
+ * it shares the adapter above; it is only named separately so the chain reads
+ * clearly and so its base URL stays configurable.
+ */
+function deepSeekProvider() {
+  return openAiCompatible({
+    name: 'deepseek',
+    baseUrl: env('DEEPSEEK_API_BASE_URL', 'https://api.deepseek.com'),
+    apiKey: env('DEEPSEEK_API_KEY'),
+    model: env('DEEPSEEK_MODEL', 'deepseek-v4-flash'),
+  });
 }
 
 function groqProvider() {
@@ -158,11 +115,11 @@ function customProvider() {
 
 /**
  * The failover chain, in priority order. Only configured providers are used.
- * Order: Gemini free tier (best quality/limits) -> Groq (fast, reliable) ->
- * OpenRouter free models -> any custom OpenAI-compatible endpoint.
+ * Order: DeepSeek (primary) -> Groq (fast, reliable) -> OpenRouter free models
+ * -> any custom OpenAI-compatible endpoint. Reorder by removing a key.
  */
 export function providerChain() {
-  return [geminiProvider(), groqProvider(), openRouterProvider(), customProvider()].filter((p) =>
+  return [deepSeekProvider(), groqProvider(), openRouterProvider(), customProvider()].filter((p) =>
     p.isConfigured(),
   );
 }

@@ -21,10 +21,22 @@ export function makeFakeProvider({ name = 'fake', model = 'fake-1', text, failWi
     model,
     isConfigured: () => true,
     calls: state,
-    async call() {
+    async call({ timeoutMs } = {}) {
       state.count += 1;
       if (calls) calls.push({ provider: name, at: Date.now() });
-      if (delayMs) await new Promise((r) => setTimeout(r, delayMs));
+      if (delayMs) {
+        // Mirror the real adapters: respect the per-call timeout and abort.
+        await new Promise((resolve, reject) => {
+          const timer = setTimeout(resolve, delayMs);
+          if (timeoutMs && timeoutMs < delayMs) {
+            setTimeout(() => {
+              clearTimeout(timer);
+              const err = Object.assign(new Error('The operation was aborted'), { name: 'AbortError', retryable: true });
+              reject(err);
+            }, timeoutMs);
+          }
+        });
+      }
       if (typeof failWith === 'function') {
         const err = failWith(state.count);
         if (err) throw err;

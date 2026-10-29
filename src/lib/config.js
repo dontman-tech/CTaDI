@@ -1,11 +1,31 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 
 // src/lib/config.js -> repo root is two levels up.
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
+/**
+ * Read a JSON config file.
+ *
+ * `require` is used first because it is a *static* call with a literal path, so
+ * bundlers and Vercel's file tracer can see exactly which files to ship with the
+ * function. A dynamic `fs.readFileSync(path.join(root, rel))` is invisible to
+ * the tracer and the file is left out of the deployment, which fails at runtime
+ * with ENOENT. The fs path is kept as a fallback for unusual layouts.
+ */
+const require = createRequire(import.meta.url);
+const JSON_FILES = { 'ctadi.config.json': true, 'form.json': true };
+
 function readJson(rel) {
+  if (JSON_FILES[rel]) {
+    try {
+      return require(`../../${rel}`);
+    } catch {
+      /* fall through to the filesystem */
+    }
+  }
   return JSON.parse(fs.readFileSync(path.join(root, rel), 'utf8'));
 }
 
