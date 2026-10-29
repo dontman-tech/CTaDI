@@ -41,14 +41,14 @@ export function loadConfig() {
 }
 
 function validateConfig(c) {
-  const w = c.scoring?.weights ?? {};
-  const total = Object.values(w).reduce((a, b) => a + b, 0);
-  if (total !== 100) {
-    throw new Error(`scoring.weights must sum to 100 (got ${total})`);
+  if (!c.organisation?.name) {
+    throw new Error('organisation.name is required in ctadi.config.json');
   }
-  const t = c.scoring?.shortlist_threshold;
-  if (!Number.isInteger(t) || t < 0 || t > 100) {
-    throw new Error('scoring.shortlist_threshold must be an integer between 0 and 100');
+  if (!c.messages?.applicant_received) {
+    throw new Error('messages.applicant_received is required in ctadi.config.json');
+  }
+  if (!c.portal?.community_invite_url) {
+    throw new Error('portal.community_invite_url is required in ctadi.config.json');
   }
 }
 

@@ -53,12 +53,6 @@
         btn.textContent = 'Join the CTaDI community';
         frag.appendChild(btn);
       }
-      if (s.state === 'shortlisted') {
-        const n = document.createElement('div');
-        n.className = 'notice ok';
-        n.textContent = 'Your application is with a human reviewer. No action is needed from you.';
-        frag.appendChild(n);
-      }
       const meta = p(`Role: ${s.role_label} · submitted ${new Date(s.submitted_at).toLocaleString()}`, 'small muted');
       frag.appendChild(meta);
       render(frag);

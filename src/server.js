@@ -1,8 +1,7 @@
 import http from 'node:http';
-import { loadConfig, env } from './lib/config.js';
+import { env } from './lib/config.js';
 import { handleApi, serveStatic } from './routes/api.js';
 import { getStore } from './store/index.js';
-import { providerChain } from './llm/providers.js';
 import { sendText } from './lib/http.js';
 
 export function createServer() {
@@ -28,21 +27,15 @@ export function createServer() {
 
 const isMain = process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
 if (isMain) {
-  const cfg = loadConfig();
   const port = Number(env('PORT', 3000));
   const server = createServer();
   server.listen(port, async () => {
-    const providers = providerChain();
     const store = await getStore();
     console.log(`\nCTaDI onboarding portal listening on http://localhost:${port}`);
     console.log(`  storage driver : ${store.driver}`);
     console.log(`  email driver   : ${env('EMAIL_DRIVER', 'console')}`);
-    console.log(`  threshold      : ${cfg.scoring.shortlist_threshold}`);
-    const chain = providers.length
-      ? providers.map((p) => `${p.name}(${p.model})`).join(' -> ')
-      : 'NONE CONFIGURED — set DEEPSEEK_API_KEY (or GROQ_API_KEY / OPENROUTER_API_KEY)';
-    console.log(`  llm providers  : ${chain}`);
-    console.log(`  admin email    : ${env('ADMIN_EMAIL', '(not set)')}\n`);
+    console.log(`  admin email    : ${env('ADMIN_EMAIL', '(not set)')}`);
+    console.log('  screening      : manual — every application is emailed to the admin\n');
   });
   const shutdown = () => {
     server.close(async () => {

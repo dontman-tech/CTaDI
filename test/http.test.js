@@ -7,8 +7,8 @@ import path from 'node:path';
 
 /**
  * End-to-end HTTP tests. These drive the real server, real routing, and real
- * storage (a throwaway JSON file) with a fake LLM injected in place of the
- * network. This is the closest thing to the deployed system that runs offline.
+ * storage (a throwaway JSON file) with a recording mailer in place of SMTP.
+ * This is the closest thing to the deployed system that runs offline.
  */
 
 const tmpDb = path.join(os.tmpdir(), `ctadi-test-${process.pid}.json`);
@@ -24,7 +24,7 @@ process.env.SUBMIT_RATE_LIMIT_PER_HOUR = '1000';
 const { createServer } = await import('../src/server.js');
 const { __setStore } = await import('../src/store/index.js');
 const { __setMailer } = await import('../src/email/mailer.js');
-const { makeMemoryStore, makeRecordingMailer } = await import('./helpers/fake-provider.js');
+const { makeMemoryStore, makeRecordingMailer } = await import('./helpers/doubles.js');
 const { questionsForRole } = await import('../src/lib/form.js');
 const { __resetRateLimit } = await import('../src/lib/http.js');
 
@@ -71,13 +71,14 @@ function payload(role, email) {
   };
 }
 
-test('GET /api/health reports storage, email, threshold and providers', async () => {
+test('GET /api/health reports storage and email, and no scoring', async () => {
   const { status, json } = await req('GET', '/api/health');
   assert.equal(status, 200);
   assert.equal(json.ok, true);
   assert.equal(json.storage, 'memory');
-  assert.equal(json.threshold, 60);
-  assert.ok(Array.isArray(json.providers));
+  assert.equal(json.email, 'console');
+  assert.equal(json.threshold, undefined, 'there is no threshold any more');
+  assert.equal(json.providers, undefined, 'there are no LLM providers any more');
 });
 
 test('GET /api/form serves the form with all six roles and no internal notes', async () => {
@@ -105,19 +106,19 @@ test('POST /api/submit rejects an invalid submission with field-level errors', a
   assert.ok(json.errors.length >= 3);
 });
 
-test('POST /api/submit accepts a valid submission and returns a status link', async () => {
+test('POST /api/submit accepts a valid submission, emails the admin, and returns a status link', async () => {
   __resetRateLimit();
-  // Inject a scoring result by stubbing the pipeline's scorer through the module cache.
+  const before = mailer.sent.length;
   const { status, json } = await req('POST', '/api/submit', payload('design', `http-${Date.now()}@example.com`));
-  // With no provider configured in this process, scoring fails and the app is parked —
-  // the submission itself must still succeed and return a status URL.
   assert.equal(status, 201);
   assert.equal(json.ok, true);
   assert.ok(json.application_id.startsWith('app_'));
   assert.match(json.status_url, /^\/status\?id=app_/);
+  assert.equal(mailer.sent.length, before + 1, 'the admin is emailed for every submission');
+  assert.equal(mailer.sent.at(-1).to, 'admin@example.org');
 });
 
-test('GET /api/status returns a public view that never leaks the score', async () => {
+test('GET /api/status returns a public view with no internal detail', async () => {
   const email = `status-${Date.now()}@example.com`;
   const created = await req('POST', '/api/submit', payload('research', email));
   const id = created.json.application_id;
@@ -125,9 +126,10 @@ test('GET /api/status returns a public view that never leaks the score', async (
   const { status, json } = await req('GET', `/api/status?id=${id}`);
   assert.equal(status, 200);
   assert.equal(json.ok, true);
-  assert.ok(json.status.state);
-  assert.equal(json.status.total_score, undefined, 'the public status view must not expose the score');
+  assert.equal(json.status.state, 'pending');
+  assert.equal(json.status.total_score, undefined);
   assert.equal(json.status.evaluation, undefined);
+  assert.equal(json.status.community_link, undefined, 'no invite until approved');
 });
 
 test('GET /api/status 404s for an unknown id', async () => {
@@ -142,25 +144,14 @@ test('POST /api/decision rejects a forged token', async () => {
   assert.equal(json.ok, false);
 });
 
-test('the full approve flow works over HTTP with a real signed link', async () => {
+test('the full review flow works over HTTP: submit, email, approve, invite', async () => {
   const email = `approve-${Date.now()}@example.com`;
   const created = await req('POST', '/api/submit', payload('operations', email));
   const id = created.json.application_id;
 
-  // Put the application into the shortlisted state the way the pipeline would.
-  const { processApplication } = await import('../src/pipeline.js');
-  const { fakeEvaluation } = await import('./helpers/fake-provider.js');
-  const scorer = async () => ({
-    evaluation: JSON.parse(fakeEvaluation({ overrides: { values_alignment: 27, relevant_skill_level: 26, quality_of_thinking: 16 } })),
-    provider: 'fake',
-    model: 'fake-1',
-    attempts: [],
-    latency_ms: 1,
-  });
-  const outcome = await processApplication(id, { store, mailer, scorer, config: (await import('../src/lib/config.js')).loadConfig() });
-  assert.equal(outcome.shortlisted, true);
-
+  // The admin reads the digest that the submission produced — no scoring step.
   const digest = mailer.sent.filter((m) => m.to === 'admin@example.org').pop();
+  assert.ok(digest, 'the admin received a digest');
   const approveToken = decodeURIComponent(/decision\?token=([A-Za-z0-9_\-%.]+)/.exec(digest.html)[1]);
 
   const decision = await req('POST', '/api/decision', { token: approveToken });
@@ -185,10 +176,19 @@ test('static serving refuses directory traversal', async () => {
   assert.notEqual(res.status, 200);
 });
 
-test('GET /api/admin/applications lists applications', async () => {
+test('GET /api/admin/applications lists applications without scores', async () => {
   const { status, json } = await req('GET', '/api/admin/applications');
   assert.equal(status, 200);
   assert.equal(json.ok, true);
   assert.ok(Array.isArray(json.applications));
   assert.ok(json.applications.length >= 1);
+  const sample = json.applications[0];
+  assert.equal(sample.total_score, undefined);
+  assert.equal(sample.shortlisted, undefined);
+  assert.equal(sample.evaluation, undefined);
+});
+
+test('GET /api/cron/rescore is gone', async () => {
+  const { status } = await req('GET', '/api/cron/rescore');
+  assert.equal(status, 404, 'the rescore job no longer exists');
 });

@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { env, envInt } from './config.js';
+import { env } from './config.js';
 
 export function nowIso() {
   return new Date().toISOString();
@@ -59,42 +59,6 @@ export function escapeHtml(value) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
-}
-
-/**
- * Detect prompt-injection-shaped content. This does NOT block submission —
- * the scoring prompt already treats answers as data. It flags the application
- * for the human reviewer and is recorded for audit.
- */
-const INJECTION_PATTERNS = [
-  /ignore\s+(all\s+|any\s+|the\s+)?(previous|prior|above|earlier)\s+(instructions?|prompts?|rules?)/i,
-  /disregard\s+(all\s+|any\s+|the\s+)?(previous|prior|above|earlier)/i,
-  /system\s*prompt/i,
-  /(^|\n)\s*(system|assistant|developer)\s*:/i,
-  /give\s+(me|this\s+applicant|them)\s+(a\s+)?(score|100|full\s+marks)/i,
-  /score\s*(of|=|:)\s*100/i,
-  /output\s+(only\s+)?(valid\s+)?json/i,
-  /<\/?(script|iframe|img|svg)/i,
-];
-
-export function scanForInjection(text) {
-  if (!text) return { flagged: false, matches: [] };
-  const matches = [];
-  for (const re of INJECTION_PATTERNS) {
-    const m = re.exec(text);
-    if (m) matches.push(m[0].slice(0, 80));
-  }
-  return { flagged: matches.length > 0, matches };
-}
-
-export function clampScore(n, max) {
-  const v = Number(n);
-  if (!Number.isFinite(v)) return 0;
-  return Math.max(0, Math.min(Math.round(v), max));
-}
-
-export function shortlistThreshold() {
-  return envInt('SHORTLIST_THRESHOLD', 60);
 }
 
 export function approvalSecret() {

@@ -40,9 +40,8 @@ export default async function handler(req, res) {
 
 /**
  * Vercel's Node runtime accepts a `config` export for per-function settings.
- * 60s is the ceiling on the Hobby plan, and scoring has its own 45s internal
- * budget (LLM_TOTAL_BUDGET_MS) so it parks the application cleanly rather than
- * being killed mid-request.
+ * 60s is the ceiling on the Hobby plan, which is ample: a submission only
+ * writes a record and sends one email, with no model call to wait on.
  */
 export const config = {
   maxDuration: 60,

@@ -5,9 +5,8 @@ import { sendJson, sendHtml, readJsonBody, checkRateLimit, clientIp } from '../l
 import { verifyDecisionToken } from '../lib/tokens.js';
 import { escapeHtml } from '../lib/util.js';
 import { getStore } from '../store/index.js';
-import { submitApplication, recordDecision, publicStatus, processApplication } from '../pipeline.js';
+import { submitApplication, recordDecision, publicStatus } from '../pipeline.js';
 import { roleOptions } from '../lib/form.js';
-import { providerChain } from '../llm/providers.js';
 
 /** Public form definition, with internal notes stripped. */
 function publicForm() {
@@ -47,14 +46,12 @@ export async function handleApi(req, res, url) {
 
   // GET /api/health — liveness plus which providers are wired up.
   if (req.method === 'GET' && p === '/api/health') {
-    const cfg = loadConfig();
     const store = await getStore();
     return sendJson(res, 200, {
       ok: true,
       storage: store.driver,
       email: env('EMAIL_DRIVER', 'console'),
-      threshold: cfg.scoring.shortlist_threshold,
-      providers: providerChain().map((x) => ({ name: x.name, model: x.model })),
+      admin_email: env('ADMIN_EMAIL', '(not set)'),
       roles: roleOptions(),
     });
   }
@@ -126,29 +123,6 @@ export async function handleApi(req, res, url) {
     }
   }
 
-  // GET|POST /api/cron/rescore — retry applications parked by a provider outage.
-  // Vercel Cron sends a GET with `Authorization: Bearer $CRON_SECRET`.
-  if ((req.method === 'GET' || req.method === 'POST') && p === '/api/cron/rescore') {
-    const secret = env('CRON_SECRET');
-    if (secret) {
-      const auth = req.headers['authorization'] ?? '';
-      const provided = auth.startsWith('Bearer ') ? auth.slice(7) : url.searchParams.get('secret');
-      if (provided !== secret) return sendJson(res, 401, { ok: false, error: 'Unauthorised.' });
-    }
-    const store = await getStore();
-    const parked = await store.list({ status: 'parked', limit: 20 });
-    const results = [];
-    for (const record of parked) {
-      try {
-        const outcome = await processApplication(record.id, { store });
-        results.push({ id: record.id, ok: outcome.ok, total_score: outcome.total_score ?? null, shortlisted: outcome.shortlisted ?? null });
-      } catch (err) {
-        results.push({ id: record.id, ok: false, error: String(err.message ?? err) });
-      }
-    }
-    return sendJson(res, 200, { ok: true, attempted: parked.length, results });
-  }
-
   // GET /api/admin/applications — simple list for the admin (protect in prod).
   if (req.method === 'GET' && p === '/api/admin/applications') {
     const token = env('ADMIN_API_TOKEN');
@@ -169,10 +143,8 @@ export async function handleApi(req, res, url) {
         email: r.email,
         role_label: r.role_label,
         status: r.status,
-        total_score: r.total_score,
-        shortlisted: r.shortlisted,
         decision: r.decision,
-        injection_flag: r.injection_flag,
+        decided_at: r.decided_at,
       })),
     });
   }

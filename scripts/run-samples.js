@@ -1,52 +1,60 @@
 #!/usr/bin/env node
 /**
- * Run the three sample applicants through the real pipeline and print a
- * report. With an LLM key set this uses the real model; without one it falls
- * back to a local heuristic so the plumbing can still be demonstrated.
+ * Render the sample applications through the real pipeline and print what the
+ * admin would receive. Screening is manual, so there is no score to compute —
+ * this shows the digest email and the links it would contain.
  *
- *   node scripts/run-samples.js            # real scoring if a key is set
- *   node scripts/run-samples.js --offline  # force the local heuristic
+ *   node scripts/run-samples.js            # all samples
+ *   node scripts/run-samples.js strong     # one sample by name
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { ROOT, loadConfig } from '../src/lib/config.js';
 import { validateSubmission } from '../src/lib/form.js';
-import { scoreApplication } from '../src/llm/scorer.js';
-import { providerChain } from '../src/llm/providers.js';
-import { heuristicEvaluation } from '../test/helpers/fake-provider.js';
+import { adminDigest } from '../src/email/templates.js';
+import { decisionLinks } from '../src/lib/tokens.js';
 
-const offline = process.argv.includes('--offline') || !providerChain().length;
+process.env.APPROVAL_TOKEN_SECRET ||= 'sample-only-secret';
+process.env.PUBLIC_BASE_URL ||= 'http://localhost:3000';
+
 const config = loadConfig();
 const samples = JSON.parse(fs.readFileSync(path.join(ROOT, 'samples', 'applicants.json'), 'utf8'));
-const keys = ['strong', 'borderline', 'weak', 'injection'];
+const allKeys = Object.keys(samples).filter((k) => !k.startsWith('_'));
+const wanted = process.argv.slice(2).filter((a) => !a.startsWith('-'));
+const keys = wanted.length ? wanted : allKeys;
 
-const scorer = offline
-  ? async (application) => ({ evaluation: heuristicEvaluation(application), provider: 'heuristic', model: 'offline', attempts: [], latency_ms: 0 })
-  : scoreApplication;
+console.log(`\nCTaDI sample review — ${keys.length} of ${allKeys.length} sample(s)`);
+console.log('Screening is manual: each application below would be emailed to the admin.\n');
 
-console.log(`\nCTaDI sample scoring — ${offline ? 'OFFLINE heuristic (no API key configured)' : 'LIVE via ' + providerChain().map((p) => p.name).join(' -> ')}`);
-console.log(`Shortlist threshold: ${config.scoring.shortlist_threshold}\n`);
-
-const results = [];
 for (const key of keys) {
-  const { ok, application, errors } = validateSubmission(samples[key]);
-  if (!ok) {
-    console.error(`  ${key}: INVALID SAMPLE — ${errors.join(', ')}`);
+  const sample = samples[key];
+  if (!sample) {
+    console.error(`  ${key}: no such sample\n`);
     continue;
   }
-  const t0 = Date.now();
-  const res = await scorer(application, { config });
-  const shortlisted = res.evaluation.total_score >= config.scoring.shortlist_threshold;
-  results.push({ key, score: res.evaluation.total_score, shortlisted, provider: res.provider });
-  console.log(`${key.padEnd(11)} ${String(res.evaluation.total_score).padStart(3)}/100  ${shortlisted ? 'SHORTLIST ✓' : 'reject     '}  (${res.provider}, ${Date.now() - t0}ms)`);
-  console.log(`            strengths: ${res.evaluation.strengths.join(' | ') || '—'}`);
-  console.log(`            concerns : ${res.evaluation.concerns.join(' | ') || '—'}`);
-  if (application.injection_flag) console.log(`            ⚠ injection attempt detected and flagged for manual review`);
-  console.log();
+  const { ok, application, errors } = validateSubmission(sample);
+  if (!ok) {
+    console.error(`  ${key}: INVALID SAMPLE — ${errors.join(', ')}\n`);
+    continue;
+  }
+
+  const links = decisionLinks(process.env.PUBLIC_BASE_URL, `app_sample_${key}`, 336);
+  const { subject, text } = adminDigest({ application, links, config });
+
+  console.log('─'.repeat(72));
+  console.log(`sample    : ${key}`);
+  console.log(`subject   : ${subject}`);
+  console.log(`applicant : ${application.identity.full_name} <${application.identity.email}>`);
+  console.log(`role      : ${application.identity.role_label}`);
+  console.log(`answers   : ${Object.keys(application.answers).length} questions`);
+  console.log(`approve   : ${links.approve.slice(0, 88)}…`);
+  console.log(`reject    : ${links.reject.slice(0, 88)}…`);
+  console.log('─'.repeat(72));
+  console.log(text.split('\n').slice(0, 12).join('\n'));
+  console.log("  … (the full email contains every answer in the applicant's own words)\n");
 }
 
-console.log('Expected outcomes:');
-console.log('  strong      -> SHORTLIST (clearly above threshold)');
-console.log('  borderline  -> near the threshold, either side, decided by the human');
-console.log('  weak        -> reject (clearly below threshold)');
-console.log('  injection   -> reject, and flagged for manual review\n');
+console.log('What happens next in production:');
+console.log('  - the admin reads the email and clicks Approve or Reject');
+console.log("  - Approve  -> the applicant's status page shows the community invite link");
+console.log("  - Reject   -> the applicant's status page shows a polite closing message\n");

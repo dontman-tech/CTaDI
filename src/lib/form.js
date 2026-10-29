@@ -1,4 +1,4 @@
-import { cleanText, isEmail, scanForInjection } from './util.js';
+import { cleanText, isEmail } from './util.js';
 import { loadConfig } from './config.js';
 
 /**
@@ -66,10 +66,6 @@ export function validateSubmission(raw) {
     }
   }
 
-  // Any free-text answer at all could carry an injection attempt; scan the lot.
-  const joined = Object.values(answers).join('\n');
-  const injection = scanForInjection(joined);
-
   if (errors.length) {
     return { ok: false, errors, application: null };
   }
@@ -83,8 +79,6 @@ export function validateSubmission(raw) {
       section: q.section,
       type: q.type ?? 'text',
     })),
-    injection_flag: injection.flagged,
-    injection_matches: injection.matches,
     raw_meta: {
       user_agent: cleanText(raw.meta?.user_agent, 300),
       received_at: new Date().toISOString(),

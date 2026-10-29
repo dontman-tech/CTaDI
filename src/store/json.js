@@ -59,7 +59,7 @@ export const jsonStore = {
     const e = String(email).toLowerCase();
     return (
       read()
-        .applications.filter((a) => a.email === e && ['received', 'scored', 'parked', 'shortlisted'].includes(a.status))
+        .applications.filter((a) => a.email === e && ['received', 'pending_review'].includes(a.status))
         .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0] ?? null
     );
   },

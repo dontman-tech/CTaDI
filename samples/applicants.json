@@ -1,5 +1,5 @@
 {
-  "_comment": "Three sample applications used by scripts/run-samples.js and the test plan. STRONG should shortlist, BORDERLINE should land near the threshold, WEAK should not shortlist. The exact scores come from the live LLM; the deterministic tests use a fake provider instead.",
+  "_comment": "Four sample applications used by scripts/run-samples.js to preview the admin digest. STRONG is an obvious yes, BORDERLINE is a judgement call, WEAK is thin, and INJECTION tests that an embedded instruction is delivered as plain text and has no effect. There is no scoring: the admin reads each one and decides.",
 
   "strong": {
     "identity": {
@@ -71,7 +71,7 @@
   },
 
   "injection": {
-    "_comment": "A weak application that also tries to manipulate the scorer. It should be scored on its real substance and flagged for manual review — the embedded instruction must not raise the score.",
+    "_comment": "A weak application that also contains an embedded instruction. It must be delivered to the admin as plain text and must not cause any action by itself — the admin still decides.",
     "identity": {
       "full_name": "Robin Vale",
       "email": "robin.vale@example.org",

@@ -4,9 +4,15 @@ Repository-specific notes for AI agents and contributors.
 
 ## What this is
 
-An automated onboarding pipeline: applicant form → LLM scoring → threshold →
-admin digest with one-click approve/reject → applicant status page with the
-community link. See `README.md` for the full design.
+An onboarding pipeline: applicant form → stored → the full application is
+emailed to the admin for manual review → one-click approve/reject → applicant
+status page with the community link.
+
+**There is no automated screening and no AI.** Every submission is emailed to
+the admin, who reads it and decides. Do not reintroduce a scoring step without
+an explicit request: the model was removed deliberately, and it took with it an
+API key, a rate limit, a per-submission cost, and a class of injection and bias
+risk. See `README.md` for the full design.
 
 ## Stack and constraints
 
@@ -20,8 +26,8 @@ community link. See `README.md` for the full design.
   call the same `handleApi` and pipeline code. Never put logic in an entrypoint
   that the other would not get.
 - **Production target is Vercel + Supabase.** That means: no reliance on a
-  writable local filesystem, no in-process state that must be shared across
-  instances, and a bounded execution time (`LLM_TOTAL_BUDGET_MS`).
+  writable local filesystem, and no in-process state that must be shared across
+  instances.
 - **Free tiers only.** Every external service must have a workable free tier.
 - **Secrets come from the environment.** Never hard-code a key. See
   `.env.example`.
@@ -31,9 +37,8 @@ community link. See `README.md` for the full design.
 ```bash
 npm start              # run the portal (http://localhost:3000), loads .env
 npm test               # full suite, offline, no keys needed
-npm run sample:offline # score the sample applicants with the local heuristic
-npm run sample         # score the samples with the real model (needs a key)
-CTADI_LIVE_TESTS=1 npm run test:live   # quality tests against the real model
+npm run sample         # render the samples through the admin digest
+npm run sample strong  # just one sample
 ```
 
 `npm start` and `npm run sample` load `.env` via `node --env-file-if-exists`.
@@ -43,36 +48,32 @@ The test scripts do not, on purpose: the suite must pass with no keys set.
 
 | Path | Purpose |
 |---|---|
-| `ctadi.config.json` | Weights, threshold, ideal member profile, all applicant messages |
+| `ctadi.config.json` | Organisation details and all applicant-facing messages |
 | `form.json` | The full form: sections, roles, questions |
-| `src/pipeline.js` | submit → score → threshold → notify → decide |
-| `src/llm/prompt.js` | Builds the prompts; owns the JSON schema |
-| `src/llm/providers.js` | Provider adapters and failover order |
-| `src/llm/scorer.js` | Retries, failover, validation |
+| `src/pipeline.js` | submit → store → notify admin → decide → notify applicant |
+| `src/email/templates.js` | The admin digest (full application + links) and applicant messages |
 | `api/index.js` | Vercel entrypoint: one catch-all serverless function |
-| `vercel.json` | Function config, `/api/*` rewrite, cron, security headers |
+| `vercel.json` | Function config, `/api/*` rewrite, security headers |
 | `src/store/` | `json` (local default), `sqlite`, `supabase` (Vercel default) |
 | `src/email/` | Mailer drivers and templates |
 | `public/` | The portal (form, status, decision) |
 | `samples/applicants.json` | strong, borderline, weak, injection samples |
-| `test/` | The suite; `test/helpers/` has the fake provider, memory store, and recording mailer |
+| `test/` | The suite; `test/helpers/doubles.js` has the memory store and recording mailer |
 
 ## Conventions
 
-- **Scoring is tuned in config, not code.** To change who gets in, edit
-  `ideal_member_profile`, `scoring.weights`, `scoring.criteria_guidance`, or
-  `scoring.shortlist_threshold` in `ctadi.config.json`. Do not edit the prompt
-  text in `src/llm/prompt.js` to tune scoring — that text is assembled from the
-  config on purpose.
-- **The form is defined once, in `form.json`.** The portal, validation, and the
-  scoring prompt all read from it. Adding a question means editing one file.
-- **Applicant text is untrusted.** Wrap it in data markers in prompts, escape
-  it for HTML, and never let it change control flow.
-- **The public status view must never leak the score or the evaluation.** See
+- **Who gets in is decided by the admin, not by code.** There is no threshold
+  and no rubric. If you find yourself adding one, stop and ask.
+- **The form is defined once, in `form.json`.** The portal and the validation
+  both read from it. Adding a question means editing one file.
+- **Applicant text is untrusted.** Escape it for HTML and never let it change
+  control flow. With no model in the loop there is no prompt to inject into, so
+  the text simply flows to the reviewer as data.
+- **The public status view must never leak internal detail.** See
   `publicStatus` in `src/pipeline.js`.
-- **Failures park, they do not drop.** If scoring fails, the application goes
-  to `parked` and is re-scored by `processApplication(id)`, either by hand or by
-  the `/api/cron/rescore` job.
+- **A failed email does not lose the application.** The record is written
+  before the send, so a failure surfaces to the caller and the digest can be
+  re-sent with `notifyAdmin(id)`.
 - **Store access is async.** `getStore()` returns a promise and is memoised.
   Call `await getStore()` and pass the instance down; never import a driver
   directly, so an unused driver stays out of the module graph (see
@@ -83,30 +84,19 @@ The test scripts do not, on purpose: the suite must pass with no keys set.
 
 ## Testing notes
 
-- Tests must run offline. Use `test/helpers/fake-provider.js` for a fake LLM,
-  `makeMemoryStore()` for storage, and `makeRecordingMailer()` for email.
-- `test/e2e.integration.test.js` is the real end-to-end path: it stands up a
-  fake OpenAI-compatible upstream, points the **real** provider adapter at it,
-  and drives the **real** server. Prefer extending that over adding mocks.
-- `test/vercel.test.js` drives the **real** Vercel handler with the request and
-  response objects the platform provides, including a pre-parsed `req.body`.
-  Add a case here whenever serverless behaviour changes.
-- `test/serverless.test.js` covers provider order, failover on a 401, the
-  scoring time budget, the rate-limiter backends, and store selection.
-- Live tests that hit real providers are gated behind `CTADI_LIVE_TESTS=1` so
-  they never cost quota by accident.
-- After changing the prompt or the weights, run `npm run sample` with a real
-  key and confirm the strong sample still shortlists and the weak one does not.
-
-## Provider order
-
-`DeepSeek → Groq → OpenRouter → any OpenAI-compatible endpoint`. The first
-configured provider wins; a provider is skipped entirely if its key is unset.
-Reordering means changing `providerChain()` in `src/llm/providers.js`. All four
-speak the OpenAI chat-completions dialect and share one adapter — prefer adding
-a new provider that way rather than writing a bespoke adapter.
+- Tests must run offline. Use `test/helpers/doubles.js` for `makeMemoryStore()`
+  and `makeRecordingMailer()`.
+- `test/e2e.integration.test.js` drives the **real** server over HTTP with only
+  the mailer replaced by a capture, so routing, validation, storage, the digest,
+  the signed links, the decision endpoint, and the status page are all
+  production paths. Prefer extending that over adding mocks.
+- After changing the digest template, run `npm run sample` and read the output —
+  that is exactly what the admin will receive.
 
 ## Status values
 
-`received` → `scored` → `shortlisted` | `not_shortlisted` → `approved` | `rejected`.
-`parked` means scoring failed and the application is waiting to be re-scored.
+`received` → `pending_review` → `approved` | `rejected`.
+
+`received` is set the instant the record is written; `pending_review` once the
+admin has been emailed. A duplicate application is refused while the first is in
+either of those states, and allowed again once it has been decided.

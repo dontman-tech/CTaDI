@@ -5,16 +5,14 @@ import { env } from '../lib/config.js';
  * a spreadsheet-like admin view, or multiple app instances. Uses the PostgREST
  * REST API with the service-role key, so no client library is needed.
  *
- * Expected table (run the SQL in README "Option B"):
+ * Expected table (run the SQL in README "Switching to Supabase"):
  *   create table applications (
  *     id text primary key,
  *     created_at timestamptz not null default now(),
  *     updated_at timestamptz not null default now(),
  *     email text not null, full_name text not null, role text not null,
- *     role_label text not null, status text not null, total_score int,
- *     shortlisted boolean default false, evaluation jsonb, application jsonb,
- *     scoring_provider text, scoring_model text, scoring_error text,
- *     injection_flag boolean default false, decision text, decided_at timestamptz,
+ *     role_label text not null, status text not null, application jsonb,
+ *     decision text, decided_at timestamptz,
  *     decided_by text, notified_admin_at timestamptz
  *   );
  *   create table audit_log (
@@ -71,7 +69,7 @@ export const supabaseStore = {
 
   async getByEmail(email) {
     const rows = await rest(
-      `applications?email=eq.${encodeURIComponent(String(email).toLowerCase())}&status=in.(received,scored,parked,shortlisted)&order=created_at.desc&limit=1`,
+      `applications?email=eq.${encodeURIComponent(String(email).toLowerCase())}&status=in.(received,pending_review)&order=created_at.desc&limit=1`,
     );
     return rows?.[0] ?? null;
   },

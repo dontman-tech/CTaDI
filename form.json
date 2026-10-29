@@ -1,11 +1,11 @@
 {
-  "_comment": "The full CTaDI onboarding form. Section A is asked of everyone. Section B is chosen by the applicant's role. Every question is open-ended on purpose: the LLM scores reasoning and evidence, not keywords. Edit text here and the portal, validation, and scoring prompt all update automatically.",
+  "_comment": "The full CTaDI onboarding form. Section A is asked of everyone. Section B is chosen by the applicant's role. Every question is open-ended on purpose, so answers show real understanding rather than keywords. Edit text here and the portal and validation update automatically.",
 
   "intro": "CTaDI brings together people who believe technology should serve people and the planet. There are no trick questions and no right answers — we are looking for how you think, not for keywords. Please answer in your own words.",
 
   "consent": {
     "id": "consent",
-    "label": "I understand that my answers will be reviewed by the CTaDI team, including with the help of automated tooling, and that a shortlisted application will be read by a human reviewer.",
+    "label": "I understand that my answers will be read and reviewed by the CTaDI team, and that they will decide on my application.",
     "required": true
   },
 
@@ -75,7 +75,7 @@
           { "id": "b_sd2", "label": "Walk us through a project you are proud of: the problem, what you built, and what you would do differently now.", "hint": "A link or repo is welcome, but the reasoning matters more than the link.", "required": true },
           { "id": "b_sd3", "label": "Describe a time you chose NOT to build software — or chose the simplest possible solution. What did you weigh up?", "hint": "We care about restraint and judgement as much as capability.", "required": true },
           { "id": "b_sd4", "label": "How do you handle data that belongs to people — privacy, consent, ownership, and the possibility of harm?", "hint": "Give a concrete situation you have faced or thought hard about.", "required": true },
-          { "id": "b_sd5", "label": "Rate your overall software/data proficiency from 1 to 5, and justify the number with one specific piece of evidence.", "hint": "1 = beginner, 3 = competent and independent, 5 = you would teach it. Your justification is scored, not your number.", "required": true, "type": "proficiency" }
+          { "id": "b_sd5", "label": "Rate your overall software/data proficiency from 1 to 5, and justify the number with one specific piece of evidence.", "hint": "1 = beginner, 3 = competent and independent, 5 = you would teach it. Your justification matters more than your number.", "required": true, "type": "proficiency" }
         ]
       },
 
@@ -87,7 +87,7 @@
           { "id": "b_he2", "label": "Describe a project you are proud of: the constraints you worked under, what you achieved, and what failed.", "hint": "Budget, climate, unreliable supply chains and maintenance realities all count as constraints.", "required": true },
           { "id": "b_he3", "label": "What breaks first in a real deployment, and how do you design for maintenance, repair and local ownership?", "hint": "Think about what happens after the installers leave.", "required": true },
           { "id": "b_he4", "label": "How do you judge whether a technology is genuinely appropriate for a community — and what makes you say no to one?", "hint": "Give an example of a technology you think is inappropriate, and why.", "required": true },
-          { "id": "b_he5", "label": "Rate your overall hardware/energy proficiency from 1 to 5, and justify the number with one specific piece of evidence.", "hint": "1 = beginner, 3 = competent and independent, 5 = you would teach it. Your justification is scored, not your number.", "required": true, "type": "proficiency" }
+          { "id": "b_he5", "label": "Rate your overall hardware/energy proficiency from 1 to 5, and justify the number with one specific piece of evidence.", "hint": "1 = beginner, 3 = competent and independent, 5 = you would teach it. Your justification matters more than your number.", "required": true, "type": "proficiency" }
         ]
       },
 
@@ -99,7 +99,7 @@
           { "id": "b_pa2", "label": "Who holds power over the change you care about, and what would realistically move them?", "hint": "Name the actors and the leverage, not just the ideal outcome.", "required": true },
           { "id": "b_pa3", "label": "Describe a time you had to argue a case to someone who disagreed strongly. What did you do, and how did it go?", "hint": "Failure stories are welcome if you learned something.", "required": true },
           { "id": "b_pa4", "label": "How do you keep advocacy honest — avoiding both techno-optimism and doomerism, and staying accountable to affected communities?", "hint": "Give a concrete example or a principle you have had to test.", "required": true },
-          { "id": "b_pa5", "label": "Rate your overall policy/advocacy proficiency from 1 to 5, and justify the number with one specific piece of evidence.", "hint": "1 = beginner, 3 = competent and independent, 5 = you would teach it. Your justification is scored, not your number.", "required": true, "type": "proficiency" }
+          { "id": "b_pa5", "label": "Rate your overall policy/advocacy proficiency from 1 to 5, and justify the number with one specific piece of evidence.", "hint": "1 = beginner, 3 = competent and independent, 5 = you would teach it. Your justification matters more than your number.", "required": true, "type": "proficiency" }
         ]
       },
 
@@ -111,7 +111,7 @@
           { "id": "b_ds2", "label": "How do you design for people and contexts very different from your own — low bandwidth, low literacy, shared devices, limited power?", "hint": "Concrete constraints, concrete decisions.", "required": true },
           { "id": "b_ds3", "label": "What does accessibility and inclusion mean in your practice, beyond a checklist?", "hint": "Give an example where it changed what you made.", "required": true },
           { "id": "b_ds4", "label": "How do you tell whether your design actually helped? What evidence would change your mind?", "hint": "We are interested in how you test reality, not how you defend your work.", "required": true },
-          { "id": "b_ds5", "label": "Rate your overall design proficiency from 1 to 5, and justify the number with one specific piece of evidence.", "hint": "1 = beginner, 3 = competent and independent, 5 = you would teach it. Your justification is scored, not your number.", "required": true, "type": "proficiency" }
+          { "id": "b_ds5", "label": "Rate your overall design proficiency from 1 to 5, and justify the number with one specific piece of evidence.", "hint": "1 = beginner, 3 = competent and independent, 5 = you would teach it. Your justification matters more than your number.", "required": true, "type": "proficiency" }
         ]
       },
 
@@ -123,7 +123,7 @@
           { "id": "b_rs2", "label": "What is a question in your field that you think is badly asked, and how would you ask it better?", "hint": "This is about judgement and framing, not about knowing the literature perfectly.", "required": true },
           { "id": "b_rs3", "label": "How do you work with people as participants rather than as subjects — consent, benefit, and returning what you learn?", "hint": "Give an example of how you put this into practice.", "required": true },
           { "id": "b_rs4", "label": "Tell us about evidence that contradicted your expectations. What did you do with it?", "hint": "We are looking for intellectual honesty, not a clean narrative.", "required": true },
-          { "id": "b_rs5", "label": "Rate your overall research proficiency from 1 to 5, and justify the number with one specific piece of evidence.", "hint": "1 = beginner, 3 = competent and independent, 5 = you would teach it. Your justification is scored, not your number.", "required": true, "type": "proficiency" }
+          { "id": "b_rs5", "label": "Rate your overall research proficiency from 1 to 5, and justify the number with one specific piece of evidence.", "hint": "1 = beginner, 3 = competent and independent, 5 = you would teach it. Your justification matters more than your number.", "required": true, "type": "proficiency" }
         ]
       },
 
@@ -135,7 +135,7 @@
           { "id": "b_op2", "label": "How do you plan when money, time and people are all tight? Walk us through a real trade-off you made.", "hint": "Tell us what you cut, and why.", "required": true },
           { "id": "b_op3", "label": "How do you keep a distributed or volunteer team coordinated, accountable and motivated without burning them out?", "hint": "Give an example of a system or habit you put in place.", "required": true },
           { "id": "b_op4", "label": "What does good record-keeping and handover look like to you, and why does it matter for an organisation like CTaDI?", "hint": "Think about what happens when one person leaves.", "required": true },
-          { "id": "b_op5", "label": "Rate your overall operations proficiency from 1 to 5, and justify the number with one specific piece of evidence.", "hint": "1 = beginner, 3 = competent and independent, 5 = you would teach it. Your justification is scored, not your number.", "required": true, "type": "proficiency" }
+          { "id": "b_op5", "label": "Rate your overall operations proficiency from 1 to 5, and justify the number with one specific piece of evidence.", "hint": "1 = beginner, 3 = competent and independent, 5 = you would teach it. Your justification matters more than your number.", "required": true, "type": "proficiency" }
         ]
       }
     }
