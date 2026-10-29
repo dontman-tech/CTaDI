@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>CTaDI — membership application</title>
+  <meta name="description" content="Apply to join CTaDI, a sustainable technology association.">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<main class="wrap">
+  <header class="brand"><a href="/">CTaDI</a></header>
+
+  <section id="intro-card" class="card">
+    <h1>Membership application</h1>
+    <p class="lede" id="intro-text">Loading…</p>
+    <p class="small muted">
+      Applications are read by the CTaDI team. Shortlisting is assisted by an automated
+      first-pass review; every shortlisted application is then read by a person.
+    </p>
+  </section>
+
+  <form id="application-form" novalidate>
+    <div id="form-errors" class="notice error hidden" role="alert"></div>
+
+    <section class="card">
+      <h2>About you</h2>
+      <p class="hint">These details are used to contact you and to pick the right questions. They are not part of the scored assessment.</p>
+      <div id="identity-fields"></div>
+    </section>
+
+    <section class="card" id="section-a">
+      <h2 id="section-a-title"></h2>
+      <p class="hint" id="section-a-subtitle"></p>
+      <div id="section-a-questions"></div>
+    </section>
+
+    <section class="card" id="section-b">
+      <h2 id="section-b-title"></h2>
+      <p class="hint" id="section-b-subtitle"></p>
+      <div id="section-b-questions"><p class="muted">Choose a role above to see the questions for your craft.</p></div>
+    </section>
+
+    <section class="card" id="section-c">
+      <h2 id="section-c-title"></h2>
+      <div id="section-c-questions"></div>
+    </section>
+
+    <section class="card">
+      <label class="check" for="consent">
+        <input type="checkbox" id="consent" name="consent" required>
+        <span id="consent-label" class="small"></span>
+      </label>
+    </section>
+
+    <div class="card">
+      <button type="submit" id="submit-btn">Submit application</button>
+      <p class="small muted" style="margin-top:10px;">
+        You will get a private status link as soon as you submit. Keep it — it is how you
+        will see your decision and, if approved, your community invitation.
+      </p>
+    </div>
+  </form>
+
+  <section id="success-card" class="card hidden" aria-live="polite"></section>
+
+  <footer class="foot">CTaDI onboarding portal</footer>
+</main>
+<script src="/form.js"></script>
+</body>
+</html>

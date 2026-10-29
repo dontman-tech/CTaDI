@@ -1,0 +1,161 @@
+{
+  "_comment": "The full CTaDI onboarding form. Section A is asked of everyone. Section B is chosen by the applicant's role. Every question is open-ended on purpose: the LLM scores reasoning and evidence, not keywords. Edit text here and the portal, validation, and scoring prompt all update automatically.",
+
+  "intro": "CTaDI brings together people who believe technology should serve people and the planet. There are no trick questions and no right answers — we are looking for how you think, not for keywords. Please answer in your own words.",
+
+  "consent": {
+    "id": "consent",
+    "label": "I understand that my answers will be reviewed by the CTaDI team, including with the help of automated tooling, and that a shortlisted application will be read by a human reviewer.",
+    "required": true
+  },
+
+  "identity": {
+    "_comment": "Collected for contacting the applicant and routed to the right question set. These fields are deliberately excluded from scoring.",
+    "fields": [
+      { "id": "full_name", "label": "Full name", "type": "text", "required": true, "max_chars": 120 },
+      { "id": "email", "label": "Email address", "type": "email", "required": true, "max_chars": 200 },
+      { "id": "country", "label": "Country or region you are based in", "type": "text", "required": false, "max_chars": 120 },
+      {
+        "id": "role",
+        "label": "Which role are you applying for?",
+        "type": "select",
+        "required": true,
+        "options": [
+          { "value": "software_data", "label": "Software & Data" },
+          { "value": "hardware_energy", "label": "Hardware & Energy" },
+          { "value": "policy_advocacy", "label": "Policy & Advocacy" },
+          { "value": "design", "label": "Design" },
+          { "value": "research", "label": "Research" },
+          { "value": "operations", "label": "Operations" }
+        ]
+      }
+    ]
+  },
+
+  "section_a": {
+    "title": "Section A — How you think",
+    "subtitle": "Everyone answers these four. A few honest paragraphs each is plenty.",
+    "questions": [
+      {
+        "id": "a1",
+        "label": "What do you understand by \"development\"?",
+        "hint": "There is no textbook answer we are fishing for. Tell us what the word means to you, and what it does not mean.",
+        "required": true
+      },
+      {
+        "id": "a2",
+        "label": "Where should development begin, and why?",
+        "hint": "Start from a place, a group of people, a problem, or an idea — and explain your reasoning.",
+        "required": true
+      },
+      {
+        "id": "a3",
+        "label": "What really matters about education?",
+        "hint": "What is education actually for? What does it do that nothing else does — and where does formal schooling fall short?",
+        "required": true
+      },
+      {
+        "id": "a4",
+        "label": "Why do you want to join CTaDI, and what do you hope to contribute?",
+        "hint": "Be specific about what you would bring and what you would want to work on. \"To learn and network\" is not enough.",
+        "required": true
+      }
+    ]
+  },
+
+  "section_b": {
+    "title": "Section B — Your craft",
+    "subtitle": "Only the questions for the role you selected. Concrete examples beat adjectives.",
+    "roles": {
+      "software_data": {
+        "label": "Software & Data",
+        "expectation": "We expect working competence in at least one language and a data stack, and the judgement to know when software is not the answer.",
+        "questions": [
+          { "id": "b_sd1", "label": "Which languages, frameworks and data tools do you actually use day to day, and what do you reach for them for?", "hint": "Name them and say what each is good at. It is fine to say a tool is not your strength.", "required": true },
+          { "id": "b_sd2", "label": "Walk us through a project you are proud of: the problem, what you built, and what you would do differently now.", "hint": "A link or repo is welcome, but the reasoning matters more than the link.", "required": true },
+          { "id": "b_sd3", "label": "Describe a time you chose NOT to build software — or chose the simplest possible solution. What did you weigh up?", "hint": "We care about restraint and judgement as much as capability.", "required": true },
+          { "id": "b_sd4", "label": "How do you handle data that belongs to people — privacy, consent, ownership, and the possibility of harm?", "hint": "Give a concrete situation you have faced or thought hard about.", "required": true },
+          { "id": "b_sd5", "label": "Rate your overall software/data proficiency from 1 to 5, and justify the number with one specific piece of evidence.", "hint": "1 = beginner, 3 = competent and independent, 5 = you would teach it. Your justification is scored, not your number.", "required": true, "type": "proficiency" }
+        ]
+      },
+
+      "hardware_energy": {
+        "label": "Hardware & Energy",
+        "expectation": "We expect hands-on ability with physical systems and an honest sense of what works in constrained, real-world conditions.",
+        "questions": [
+          { "id": "b_he1", "label": "What hardware, power or energy systems have you built, repaired, installed or measured yourself?", "hint": "Bench work, field work, or coursework — say what you actually touched.", "required": true },
+          { "id": "b_he2", "label": "Describe a project you are proud of: the constraints you worked under, what you achieved, and what failed.", "hint": "Budget, climate, unreliable supply chains and maintenance realities all count as constraints.", "required": true },
+          { "id": "b_he3", "label": "What breaks first in a real deployment, and how do you design for maintenance, repair and local ownership?", "hint": "Think about what happens after the installers leave.", "required": true },
+          { "id": "b_he4", "label": "How do you judge whether a technology is genuinely appropriate for a community — and what makes you say no to one?", "hint": "Give an example of a technology you think is inappropriate, and why.", "required": true },
+          { "id": "b_he5", "label": "Rate your overall hardware/energy proficiency from 1 to 5, and justify the number with one specific piece of evidence.", "hint": "1 = beginner, 3 = competent and independent, 5 = you would teach it. Your justification is scored, not your number.", "required": true, "type": "proficiency" }
+        ]
+      },
+
+      "policy_advocacy": {
+        "label": "Policy & Advocacy",
+        "expectation": "We expect the ability to read a system, identify who holds power, and argue a case in writing and in person.",
+        "questions": [
+          { "id": "b_pa1", "label": "Describe a policy, regulation or institutional decision you have engaged with — analysed, campaigned on, drafted or resisted.", "hint": "Tell us what was at stake and what you actually did.", "required": true },
+          { "id": "b_pa2", "label": "Who holds power over the change you care about, and what would realistically move them?", "hint": "Name the actors and the leverage, not just the ideal outcome.", "required": true },
+          { "id": "b_pa3", "label": "Describe a time you had to argue a case to someone who disagreed strongly. What did you do, and how did it go?", "hint": "Failure stories are welcome if you learned something.", "required": true },
+          { "id": "b_pa4", "label": "How do you keep advocacy honest — avoiding both techno-optimism and doomerism, and staying accountable to affected communities?", "hint": "Give a concrete example or a principle you have had to test.", "required": true },
+          { "id": "b_pa5", "label": "Rate your overall policy/advocacy proficiency from 1 to 5, and justify the number with one specific piece of evidence.", "hint": "1 = beginner, 3 = competent and independent, 5 = you would teach it. Your justification is scored, not your number.", "required": true, "type": "proficiency" }
+        ]
+      },
+
+      "design": {
+        "label": "Design",
+        "expectation": "We expect design that starts from real users in real conditions, not from a mood board.",
+        "questions": [
+          { "id": "b_ds1", "label": "Walk us through a design project you are proud of: who it was for, what you learned from them, and what you changed as a result.", "hint": "Show the reasoning behind the decisions, not just the output.", "required": true },
+          { "id": "b_ds2", "label": "How do you design for people and contexts very different from your own — low bandwidth, low literacy, shared devices, limited power?", "hint": "Concrete constraints, concrete decisions.", "required": true },
+          { "id": "b_ds3", "label": "What does accessibility and inclusion mean in your practice, beyond a checklist?", "hint": "Give an example where it changed what you made.", "required": true },
+          { "id": "b_ds4", "label": "How do you tell whether your design actually helped? What evidence would change your mind?", "hint": "We are interested in how you test reality, not how you defend your work.", "required": true },
+          { "id": "b_ds5", "label": "Rate your overall design proficiency from 1 to 5, and justify the number with one specific piece of evidence.", "hint": "1 = beginner, 3 = competent and independent, 5 = you would teach it. Your justification is scored, not your number.", "required": true, "type": "proficiency" }
+        ]
+      },
+
+      "research": {
+        "label": "Research",
+        "expectation": "We expect the ability to form a real question, gather evidence honestly, and admit what the evidence does not show.",
+        "questions": [
+          { "id": "b_rs1", "label": "Describe a piece of research you have done — formal or self-directed: the question, your method, and what you found.", "hint": "A paper, report, thesis or a serious personal investigation all count.", "required": true },
+          { "id": "b_rs2", "label": "What is a question in your field that you think is badly asked, and how would you ask it better?", "hint": "This is about judgement and framing, not about knowing the literature perfectly.", "required": true },
+          { "id": "b_rs3", "label": "How do you work with people as participants rather than as subjects — consent, benefit, and returning what you learn?", "hint": "Give an example of how you put this into practice.", "required": true },
+          { "id": "b_rs4", "label": "Tell us about evidence that contradicted your expectations. What did you do with it?", "hint": "We are looking for intellectual honesty, not a clean narrative.", "required": true },
+          { "id": "b_rs5", "label": "Rate your overall research proficiency from 1 to 5, and justify the number with one specific piece of evidence.", "hint": "1 = beginner, 3 = competent and independent, 5 = you would teach it. Your justification is scored, not your number.", "required": true, "type": "proficiency" }
+        ]
+      },
+
+      "operations": {
+        "label": "Operations",
+        "expectation": "We expect the ability to make things actually happen: logistics, budgets, people, and the unglamorous follow-through.",
+        "questions": [
+          { "id": "b_op1", "label": "Describe an operation, event, programme or process you ran end to end. What was your part, and what did it take to make it work?", "hint": "Scale does not matter. Reliability does.", "required": true },
+          { "id": "b_op2", "label": "How do you plan when money, time and people are all tight? Walk us through a real trade-off you made.", "hint": "Tell us what you cut, and why.", "required": true },
+          { "id": "b_op3", "label": "How do you keep a distributed or volunteer team coordinated, accountable and motivated without burning them out?", "hint": "Give an example of a system or habit you put in place.", "required": true },
+          { "id": "b_op4", "label": "What does good record-keeping and handover look like to you, and why does it matter for an organisation like CTaDI?", "hint": "Think about what happens when one person leaves.", "required": true },
+          { "id": "b_op5", "label": "Rate your overall operations proficiency from 1 to 5, and justify the number with one specific piece of evidence.", "hint": "1 = beginner, 3 = competent and independent, 5 = you would teach it. Your justification is scored, not your number.", "required": true, "type": "proficiency" }
+        ]
+      }
+    }
+  },
+
+  "availability": {
+    "title": "Your commitment",
+    "questions": [
+      {
+        "id": "av1",
+        "label": "Realistically, how many hours per week can you commit to CTaDI over the next six months, and how does that fit alongside your other work or study?",
+        "hint": "A modest, honest answer is better than an ambitious one you cannot keep.",
+        "required": true
+      },
+      {
+        "id": "av2",
+        "label": "How would you like to be involved — a specific project, ongoing volunteering, occasional advice, or something else?",
+        "hint": "Tell us what you would want to start with.",
+        "required": true
+      }
+    ]
+  }
+}

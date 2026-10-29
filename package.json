@@ -1,0 +1,18 @@
+{
+  "name": "ctadi-onboarding",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Automated, LLM-scored onboarding pipeline for CTaDI (form -> score -> admin digest -> approve/reject -> community link).",
+  "type": "module",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test \"test/*.test.js\"",
+    "test:live": "CTADI_LIVE_TESTS=1 node --test test/live.llm.test.js",
+    "sample": "node scripts/run-samples.js",
+    "sample:offline": "node scripts/run-samples.js --offline"
+  }
+}
