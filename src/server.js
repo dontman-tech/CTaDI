@@ -33,9 +33,9 @@ if (isMain) {
     const store = await getStore();
     console.log(`\nCTaDI onboarding portal listening on http://localhost:${port}`);
     console.log(`  storage driver : ${store.driver}`);
-    console.log(`  email driver   : ${env('EMAIL_DRIVER', 'console')}`);
-    console.log(`  admin email    : ${env('ADMIN_EMAIL', '(not set)')}`);
-    console.log('  screening      : manual — every application is emailed to the admin\n');
+    console.log(`  screening      : manual — review applications in the dashboard`);
+    console.log(`  admin token    : ${env('ADMIN_API_TOKEN') ? 'set' : 'NOT SET (dashboard is open locally only)'}`);
+    console.log('  dashboard      : http://localhost:' + port + '/admin\n');
   });
   const shutdown = () => {
     server.close(async () => {

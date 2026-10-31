@@ -83,3 +83,31 @@ button:disabled { opacity: .55; cursor: default; }
 footer.foot { color: var(--muted); font-size: 13px; padding-top: 8px; }
 code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; background: #eef1ee; padding: 1px 5px; border-radius: 4px; word-break: break-all; }
 .link-box { background: #eef4ef; border: 1px solid #c9e0d1; border-radius: 8px; padding: 14px; margin: 16px 0; word-break: break-all; }
+
+/* ---- Admin dashboard ---- */
+.admin-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+.admin-bar .spacer { flex: 1 1 auto; }
+.pill { display: inline-block; font-size: 11.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px; text-transform: uppercase; letter-spacing: .04em; }
+.pill.pending_review { background: #fdf8e8; border: 1px solid #eadfb4; color: #6b5a17; }
+.pill.approved { background: #eef4ef; border: 1px solid #c9e0d1; color: #26533a; }
+.pill.rejected { background: #fff4f4; border: 1px solid #f0c6c6; color: #7d2b2b; }
+.app-list { list-style: none; margin: 0; padding: 0; }
+.app-list li { border-bottom: 1px solid var(--line); }
+.app-list li:last-child { border-bottom: 0; }
+.app-list a { display: flex; gap: 12px; align-items: center; padding: 13px 4px; text-decoration: none; color: inherit; }
+.app-list a:hover { background: #fafcfa; }
+.app-list .who { flex: 1 1 auto; min-width: 0; }
+.app-list .who strong { display: block; }
+.app-list .who span { color: var(--muted); font-size: 13px; }
+.answer { margin-bottom: 18px; }
+.answer .q { font-weight: 600; line-height: 1.45; margin-bottom: 2px; }
+.answer .meta { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: 5px; }
+.answer .a { white-space: pre-wrap; background: #fdfefd; border: 1px solid var(--line); border-radius: 7px; padding: 11px 13px; font-size: 15px; line-height: 1.6; }
+.kv { width: 100%; border-collapse: collapse; font-size: 14.5px; margin-bottom: 18px; }
+.kv td { padding: 4px 12px 4px 0; vertical-align: top; }
+.kv td:first-child { color: var(--muted); width: 130px; }
+.decide { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 6px; }
+.decide button { flex: 1 1 200px; }
+.btn.reject { background: #fff; color: var(--danger); border-color: #e0b4b4; }
+.btn.small { padding: 7px 14px; font-size: 14px; }
+.empty { color: var(--muted); padding: 26px 4px; text-align: center; }

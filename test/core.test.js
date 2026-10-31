@@ -2,16 +2,15 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadConfig } from '../src/lib/config.js';
 import { cleanText, escapeHtml, isEmail, safeEqual } from '../src/lib/util.js';
-import { createDecisionToken, verifyDecisionToken, decisionLinks } from '../src/lib/tokens.js';
 import { validateSubmission, questionsForRole } from '../src/lib/form.js';
-
-process.env.APPROVAL_TOKEN_SECRET = 'test-secret-please-do-not-use';
 
 test('config: the organisation, messages, and invite link are present', () => {
   const cfg = loadConfig();
   assert.ok(cfg.organisation.name, 'organisation.name is set');
   assert.ok(cfg.messages.applicant_received, 'the received message is set');
+  assert.ok(cfg.messages.applicant_under_review, 'the under-review message is set');
   assert.ok(cfg.messages.applicant_approved, 'the approved message is set');
+  assert.ok(cfg.messages.applicant_rejected, 'the rejected message is set');
   assert.ok(cfg.portal.community_invite_url, 'the community invite link is set');
 });
 
@@ -19,6 +18,11 @@ test('config: there is no scoring configuration any more', () => {
   const cfg = loadConfig();
   assert.equal(cfg.scoring, undefined, 'scoring must be gone from the config');
   assert.equal(cfg.ideal_member_profile, undefined, 'the ideal-member profile must be gone');
+});
+
+test('config: there is no email configuration any more', () => {
+  const cfg = loadConfig();
+  assert.equal(cfg.portal.email_applicant_on_approval, undefined, 'the email-on-approval flag is gone');
 });
 
 test('config: every role has a full question set and section A is shared', () => {
@@ -58,38 +62,7 @@ test('util: safeEqual is correct and does not throw on length mismatch', () => {
   assert.ok(safeEqual('abc', 'abc'));
   assert.ok(!safeEqual('abc', 'abd'));
   assert.ok(!safeEqual('abc', 'abcdef'));
-});
-
-test('tokens: a valid token round-trips with its decision and id', () => {
-  const t = createDecisionToken({ applicationId: 'app_123', decision: 'approve', ttlHours: 1 });
-  const v = verifyDecisionToken(t);
-  assert.equal(v.ok, true);
-  assert.equal(v.applicationId, 'app_123');
-  assert.equal(v.decision, 'approve');
-});
-
-test('tokens: tampering with the payload invalidates the token', () => {
-  const t = createDecisionToken({ applicationId: 'app_123', decision: 'reject', ttlHours: 1 });
-  const [body, mac] = t.split('.');
-  const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
-  payload.d = 'approve'; // flip reject -> approve
-  const forged = `${Buffer.from(JSON.stringify(payload)).toString('base64url')}.${mac}`;
-  const v = verifyDecisionToken(forged);
-  assert.equal(v.ok, false);
-  assert.equal(v.reason, 'bad_signature');
-});
-
-test('tokens: an expired token is rejected', () => {
-  const t = createDecisionToken({ applicationId: 'app_1', decision: 'approve', ttlHours: -1 });
-  assert.equal(verifyDecisionToken(t).reason, 'expired');
-});
-
-test('tokens: decisionLinks builds absolute approve and reject URLs', () => {
-  const links = decisionLinks('https://portal.example.org/', 'app_9', 1);
-  assert.ok(links.approve.startsWith('https://portal.example.org/decision?token='));
-  assert.ok(links.reject.startsWith('https://portal.example.org/decision?token='));
-  assert.equal(verifyDecisionToken(new URL(links.approve).searchParams.get('token')).decision, 'approve');
-  assert.equal(verifyDecisionToken(new URL(links.reject).searchParams.get('token')).decision, 'reject');
+  assert.ok(!safeEqual('abc', ''));
 });
 
 test('form: a complete submission validates and normalises', () => {

@@ -1,25 +1,18 @@
 {
   "$schema": "./ctadi.config.schema.json",
-  "_comment": "EDIT THIS FILE to tune CTaDI onboarding. Nothing else needs to change: the organisation details and every applicant-facing message live here. Applications are reviewed by a human, so there is no scoring configuration.",
-
+  "_comment": "EDIT THIS FILE to tune CTaDI onboarding. Nothing else needs to change: the organisation details and every applicant-facing message live here. Applications are reviewed by a human in the admin dashboard, so there is no scoring configuration and no email.",
   "organisation": {
     "name": "CTaDI",
     "tagline": "Sustainable technology and people-centred development",
     "admin_name": "CTaDI Membership Team"
   },
-
   "messages": {
-    "applicant_received": "Thank you — we have received your application. A member of the CTaDI team will read it and you will hear from us soon. Either way, we appreciate the time you took.",
-    "applicant_under_review": "Thank you — your application is with the CTaDI membership team for review. We will be in touch shortly with next steps.",
-    "applicant_approved": "Welcome to CTaDI. Your application has been approved. Your community invitation link is below — it is personal to you, please do not share it publicly.",
-    "applicant_rejected": "Thank you again for applying to CTaDI. After review we are not able to offer you membership in this round. We are grateful for your interest and hope our paths cross again.",
-    "decision_already_made": "This application has already been reviewed and a decision has been recorded.",
-    "link_expired": "This review link has expired or is invalid. Please open the admin dashboard to review this application."
+    "applicant_received": "Thank you \u2014 we have received your application. A member of the CTaDI team will read it and you will hear from us soon. Either way, we appreciate the time you took.",
+    "applicant_under_review": "Thank you \u2014 your application is with the CTaDI membership team for review. We will be in touch shortly with next steps.",
+    "applicant_approved": "Welcome to CTaDI. Your application has been approved. Your community invitation link is below \u2014 it is personal to you, please do not share it publicly.",
+    "applicant_rejected": "Thank you again for applying to CTaDI. After review we are not able to offer you membership in this round. We are grateful for your interest and hope our paths cross again."
   },
-
   "portal": {
-    "community_invite_url": "https://community.example.org/join/ctadi",
-    "email_applicant_on_approval": false
+    "community_invite_url": "https://community.example.org/join/ctadi"
   }
 }
-

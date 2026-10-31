@@ -78,12 +78,12 @@ export async function readJsonBody(req, maxBytes = 256 * 1024) {
 /**
  * Fixed-window rate limiter.
  *
- * Two backends. When `RATE_LIMIT_BACKEND=supabase` (or Upstash Redis is
- * configured) the counter lives outside the process, which is required on
- * serverless: each invocation may be a fresh instance, so an in-process map
- * would let a caller reset the window simply by getting a cold start. The
- * in-process map remains the default for local development and single-instance
- * deployments, where it is exact and free.
+ * On a serverless platform each request may land on a fresh instance, so an
+ * in-process counter can be reset simply by getting a cold start. When the
+ * Postgres store is in use the counter is kept there instead, in a single
+ * atomic upsert. The in-process map remains the fallback for local
+ * development, single-instance deployments, and any moment the database is
+ * unreachable — the limiter fails open rather than blocking real applicants.
  */
 const buckets = new Map();
 
@@ -102,64 +102,26 @@ export function rateLimit(key, perHour = envInt('SUBMIT_RATE_LIMIT_PER_HOUR', 5)
   return { allowed: true, remaining: perHour - entry.count };
 }
 
-/** Upstash Redis REST rate limit. Falls back to the in-process limiter on error. */
-async function upstashRateLimit(key, perHour) {
-  const url = env('UPSTASH_REDIS_REST_URL');
-  const token = env('UPSTASH_REDIS_REST_TOKEN');
-  const windowSeconds = 3600;
-  const redisKey = `ctadi:rl:${key}`;
+/** Postgres-backed fixed window, via the store. Falls back on any error. */
+async function postgresRateLimit(key, perHour) {
   try {
-    const res = await fetch(`${url}/pipeline`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify([
-        ['INCR', redisKey],
-        ['EXPIRE', redisKey, String(windowSeconds), 'NX'],
-      ]),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    const count = Number(data?.[0]?.result ?? 0);
-    if (!Number.isFinite(count) || count <= 0) throw new Error('unexpected counter');
-    return { allowed: count <= perHour, remaining: Math.max(0, perHour - count) };
-  } catch (err) {
-    console.warn('[rate-limit] distributed limiter unavailable, using in-process fallback:', err.message);
-    return rateLimit(key, perHour);
-  }
-}
-
-/** Supabase-backed limiter, using an atomic increment RPC if one is installed. */
-async function supabaseRateLimit(key, perHour) {
-  const url = env('SUPABASE_URL');
-  const svc = env('SUPABASE_SERVICE_ROLE_KEY');
-  try {
-    const res = await fetch(`${url}/rest/v1/rpc/ctadi_rate_limit`, {
-      method: 'POST',
-      headers: { apikey: svc, authorization: `Bearer ${svc}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ p_key: key, p_window_seconds: 3600 }),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const count = Number(await res.json());
+    const { postgresStore } = await import('../store/postgres.js');
+    const count = await postgresStore.rateLimit(key, 3600);
     if (!Number.isFinite(count)) throw new Error('unexpected counter');
     return { allowed: count <= perHour, remaining: Math.max(0, perHour - count) };
   } catch (err) {
-    console.warn('[rate-limit] supabase limiter unavailable, using in-process fallback:', err.message);
+    console.warn('[rate-limit] postgres limiter unavailable, using in-process fallback:', err.message);
     return rateLimit(key, perHour);
   }
 }
 
 /**
- * Choose the limiter. Distributed when the platform is serverless and a
- * backend is configured; in-process otherwise.
+ * Choose the limiter. The distributed one is used whenever the deployment is
+ * backed by Postgres, which is exactly when an in-process counter is unsafe.
  */
 export async function checkRateLimit(key, perHour = envInt('SUBMIT_RATE_LIMIT_PER_HOUR', 5)) {
-  const backend = env('RATE_LIMIT_BACKEND');
-  if (backend === 'upstash' || (!backend && env('UPSTASH_REDIS_REST_URL') && env('UPSTASH_REDIS_REST_TOKEN'))) {
-    return upstashRateLimit(key, perHour);
-  }
-  if (backend === 'supabase') {
-    return supabaseRateLimit(key, perHour);
-  }
+  const driver = env('STORAGE_DRIVER') ?? (env('VERCEL') ? 'postgres' : 'json');
+  if (driver === 'postgres') return postgresRateLimit(key, perHour);
   return rateLimit(key, perHour);
 }
 

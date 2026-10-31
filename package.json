@@ -2,7 +2,7 @@
   "name": "ctadi-onboarding",
   "version": "1.0.0",
   "private": true,
-  "description": "Manual-review onboarding pipeline for CTaDI (form -> admin digest -> approve/reject -> community link).",
+  "description": "CTaDI onboarding: application form, Postgres storage, and an admin dashboard for manual review.",
   "type": "module",
   "engines": {
     "node": ">=22.5.0"
@@ -11,7 +11,10 @@
     "start": "node --env-file-if-exists=.env src/server.js",
     "dev": "node --env-file-if-exists=.env --watch src/server.js",
     "test": "node --test \"test/*.test.js\"",
-    "sample": "node scripts/run-samples.js"
+    "sample": "node scripts/run-samples.js",
+    "migrate": "node --env-file-if-exists=.env scripts/migrate.js"
   },
-  "dependencies": {}
+  "dependencies": {
+    "@neondatabase/serverless": "^1.2.0"
+  }
 }

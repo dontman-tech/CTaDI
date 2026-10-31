@@ -6,7 +6,7 @@ import { env, ROOT } from '../lib/config.js';
 /**
  * SQLite store using Node's built-in `node:sqlite` (no native build, no
  * dependency, no external service). Good for a single-instance deployment.
- * For multi-instance deployments use the Supabase driver instead.
+ * For multi-instance deployments use the Postgres driver instead.
  */
 
 function dbPath() {
@@ -35,8 +35,7 @@ function connect() {
       application       TEXT NOT NULL,
       decision          TEXT,
       decided_at        TEXT,
-      decided_by        TEXT,
-      notified_admin_at TEXT
+      decided_by        TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_applications_status ON applications(status);
     CREATE INDEX IF NOT EXISTS idx_applications_created ON applications(created_at DESC);
@@ -68,7 +67,6 @@ function rowToRecord(row) {
     decision: row.decision,
     decided_at: row.decided_at,
     decided_by: row.decided_by,
-    notified_admin_at: row.notified_admin_at,
   };
 }
 
@@ -80,14 +78,14 @@ export const sqliteStore = {
     d.prepare(`
       INSERT INTO applications (
         id, created_at, updated_at, email, full_name, role, role_label, status,
-        application, decision, decided_at, decided_by, notified_admin_at
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+        application, decision, decided_at, decided_by
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
     `).run(
       record.id, record.created_at, record.updated_at, record.email, record.full_name,
       record.role, record.role_label, record.status,
       JSON.stringify(record.application),
       record.decision ?? null, record.decided_at ?? null,
-      record.decided_by ?? null, record.notified_admin_at ?? null,
+      record.decided_by ?? null,
     );
     return record;
   },
@@ -99,12 +97,11 @@ export const sqliteStore = {
     const next = { ...current, ...patch, updated_at: new Date().toISOString() };
     d.prepare(`
       UPDATE applications SET
-        updated_at=?, status=?, decision=?, decided_at=?, decided_by=?,
-        notified_admin_at=?
+        updated_at=?, status=?, decision=?, decided_at=?, decided_by=?
       WHERE id=?
     `).run(
       next.updated_at, next.status, next.decision ?? null, next.decided_at ?? null,
-      next.decided_by ?? null, next.notified_admin_at ?? null, id,
+      next.decided_by ?? null, id,
     );
     return next;
   },
@@ -140,6 +137,24 @@ export const sqliteStore = {
     const d = connect();
     const rows = d.prepare('SELECT * FROM audit_log WHERE application_id=? ORDER BY id DESC LIMIT ?').all(applicationId, limit);
     return rows.map((r) => ({ ...r, detail: r.detail ? JSON.parse(r.detail) : null }));
+  },
+
+  /** Fixed-window counter, stored in the same database. */
+  async rateLimit(key, windowSeconds = 3600) {
+    const d = connect();
+    d.exec(`CREATE TABLE IF NOT EXISTS rate_limits (
+      key TEXT PRIMARY KEY, window_start INTEGER NOT NULL, count INTEGER NOT NULL
+    );`);
+    const now = Date.now();
+    const row = d.prepare('SELECT window_start, count FROM rate_limits WHERE key=?').get(key);
+    if (!row || now - row.window_start >= windowSeconds * 1000) {
+      d.prepare('INSERT INTO rate_limits (key, window_start, count) VALUES (?,?,1) ON CONFLICT(key) DO UPDATE SET window_start=?, count=1')
+        .run(key, now, now);
+      return 1;
+    }
+    const next = row.count + 1;
+    d.prepare('UPDATE rate_limits SET count=? WHERE key=?').run(next, key);
+    return next;
   },
 
   async close() {

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CTaDI — admin review</title>
+<meta name="robots" content="noindex, nofollow">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<main class="wrap">
+  <header class="brand"><a href="/">CTaDI</a> <span class="muted small">· admin review</span></header>
+
+  <!-- Login: shown until a token is accepted. -->
+  <section id="login-card" class="card hidden">
+    <h1>Admin review</h1>
+    <p class="lede">Enter the admin token to review applications.</p>
+    <form id="login-form">
+      <div class="field">
+        <label class="q" for="token">Admin token</label>
+        <input type="text" id="token" autocomplete="current-password" required>
+      </div>
+      <button type="submit">Open the dashboard</button>
+    </form>
+    <div id="login-error" class="notice error hidden" role="alert"></div>
+  </section>
+
+  <!-- List view -->
+  <section id="list-view" class="hidden">
+    <div class="admin-bar">
+      <h1 style="margin:0;font-size:22px;">Applications</h1>
+      <span class="spacer"></span>
+      <select id="filter" aria-label="Filter by status">
+        <option value="">All</option>
+        <option value="pending_review" selected>Awaiting review</option>
+        <option value="approved">Approved</option>
+        <option value="rejected">Rejected</option>
+      </select>
+      <button class="btn small" id="refresh" type="button">Refresh</button>
+      <button class="btn small ghost" id="signout" type="button">Sign out</button>
+    </div>
+    <div id="list-error" class="notice error hidden" role="alert"></div>
+    <div class="card">
+      <ul class="app-list" id="app-list"></ul>
+      <p class="empty hidden" id="list-empty">No applications here yet.</p>
+    </div>
+  </section>
+
+  <!-- Detail view -->
+  <section id="detail-view" class="hidden">
+    <div class="admin-bar">
+      <button class="btn small ghost" id="back" type="button">← Back to list</button>
+    </div>
+    <div id="detail-body"></div>
+  </section>
+</main>
+<script src="/admin/admin.js"></script>
+</body>
+</html>

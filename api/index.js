@@ -10,8 +10,12 @@
  * handler the rest of the code already speaks, so the same logic runs locally
  * (src/server.js) and on Vercel with no branching in the application code.
  *
+ * Note on the admin dashboard: /admin is a static page served from the CDN,
+ * but every /api/admin/* call goes through this function and is authenticated
+ * with ADMIN_API_TOKEN. The static page carries no data of its own.
+ *
  * Cold-start note: the store driver is imported lazily inside getStore(), so
- * an unused driver (for example node:sqlite on a Supabase deployment) can never
+ * an unused driver (for example node:sqlite on a Postgres deployment) can never
  * break module evaluation.
  */
 import { handleApi } from '../src/routes/api.js';

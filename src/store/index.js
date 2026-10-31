@@ -6,25 +6,25 @@ import { env } from '../lib/config.js';
  * Drivers are loaded lazily, on first use, rather than imported eagerly. This
  * matters on serverless platforms: a static `import` of `node:sqlite` would
  * crash the whole function at module-evaluation time if the runtime does not
- * ship that module, even when the deployment uses Supabase. Loading on demand
+ * ship that module, even when the deployment uses Postgres. Loading on demand
  * means an unused driver can never break a cold start.
  *
- * Default driver: Supabase when running on Vercel (a serverless filesystem is
+ * Default driver: Postgres when running on Vercel (a serverless filesystem is
  * read-only apart from /tmp and does not persist between invocations), JSON
  * otherwise so local development needs no setup at all.
  */
 
 const LOADERS = {
+  postgres: () => import('./postgres.js').then((m) => m.postgresStore),
   sqlite: () => import('./sqlite.js').then((m) => m.sqliteStore),
   json: () => import('./json.js').then((m) => m.jsonStore),
-  supabase: () => import('./supabase.js').then((m) => m.supabaseStore),
 };
 
 let instance = null;
 
 function defaultDriver() {
   // Vercel sets VERCEL=1 on every deployment.
-  if (env('VERCEL')) return 'supabase';
+  if (env('VERCEL')) return 'postgres';
   return 'json';
 }
 

@@ -5,8 +5,10 @@ import { env, ROOT } from '../lib/config.js';
 /**
  * Zero-dependency JSON-file store. Fine for a few hundred applications or for
  * local development. Not safe across multiple instances — use SQLite or
- * Supabase if you scale out. Writes are atomic (write temp, then rename).
+ * Postgres if you scale out. Writes are atomic (write temp, then rename).
  */
+
+const rateLimits = new Map();
 
 function filePath() {
   const p = env('JSON_DB_PATH', './data/ctadi.json');
@@ -75,6 +77,22 @@ export const jsonStore = {
     const data = read();
     data.audit.push({ at: new Date().toISOString(), application_id: applicationId ?? null, action, detail: detail ?? null });
     write(data);
+  },
+
+  /**
+   * In-process fixed-window counter. The JSON store is single-instance by
+   * nature, so this is exact rather than a fallback.
+   */
+  async rateLimit(key, windowSeconds = 3600) {
+    const now = Date.now();
+    const windowMs = windowSeconds * 1000;
+    const entry = rateLimits.get(key);
+    if (!entry || now - entry.start >= windowMs) {
+      rateLimits.set(key, { start: now, count: 1 });
+      return 1;
+    }
+    entry.count += 1;
+    return entry.count;
   },
 
   async auditList(applicationId, limit = 50) {

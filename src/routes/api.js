@@ -2,10 +2,9 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { loadConfig, env, ROOT } from '../lib/config.js';
 import { sendJson, sendHtml, readJsonBody, checkRateLimit, clientIp } from '../lib/http.js';
-import { verifyDecisionToken } from '../lib/tokens.js';
-import { escapeHtml } from '../lib/util.js';
+import { safeEqual } from '../lib/util.js';
 import { getStore } from '../store/index.js';
-import { submitApplication, recordDecision, publicStatus } from '../pipeline.js';
+import { submitApplication, recordDecision, publicStatus, adminView } from '../pipeline.js';
 import { roleOptions } from '../lib/form.js';
 
 /** Public form definition, with internal notes stripped. */
@@ -36,6 +35,30 @@ function publicForm() {
   };
 }
 
+/**
+ * Admin authentication. The dashboard is the only route into applicant data,
+ * so it is gated on a shared secret sent as `X-Admin-Token`.
+ *
+ * In production a token is mandatory: without one the dashboard would be open
+ * to anyone who found the URL, and the whole point of the portal is that only
+ * the admin reads applications. Locally, with no token set, access is allowed
+ * so development needs no setup.
+ */
+function requireAdmin(req, url) {
+  const expected = env('ADMIN_API_TOKEN');
+  if (!expected) {
+    if (env('NODE_ENV') === 'production' || env('VERCEL')) {
+      return { ok: false, status: 503, error: 'ADMIN_API_TOKEN is not configured. Set it to use the admin dashboard.' };
+    }
+    return { ok: true, admin: 'dev-no-token' };
+  }
+  const provided = req.headers['x-admin-token'] ?? url.searchParams.get('token') ?? '';
+  if (!provided || !safeEqual(String(provided), String(expected))) {
+    return { ok: false, status: 401, error: 'Unauthorised.' };
+  }
+  return { ok: true, admin: 'token' };
+}
+
 export async function handleApi(req, res, url) {
   const p = url.pathname;
 
@@ -44,14 +67,14 @@ export async function handleApi(req, res, url) {
     return sendJson(res, 200, publicForm());
   }
 
-  // GET /api/health — liveness plus which providers are wired up.
+  // GET /api/health — liveness and which drivers are wired up.
   if (req.method === 'GET' && p === '/api/health') {
     const store = await getStore();
     return sendJson(res, 200, {
       ok: true,
       storage: store.driver,
-      email: env('EMAIL_DRIVER', 'console'),
-      admin_email: env('ADMIN_EMAIL', '(not set)'),
+      screening: 'manual',
+      review: 'admin dashboard',
       roles: roleOptions(),
     });
   }
@@ -94,42 +117,12 @@ export async function handleApi(req, res, url) {
     return sendJson(res, 200, { ok: true, status: publicStatus(record) });
   }
 
-  // POST /api/decision — the one-click approve/reject endpoint.
-  if (req.method === 'POST' && p === '/api/decision') {
-    let body;
-    try {
-      body = await readJsonBody(req);
-    } catch (err) {
-      return sendJson(res, err.status ?? 400, { ok: false, error: err.message });
-    }
-    const verified = verifyDecisionToken(body?.token);
-    if (!verified.ok) {
-      const cfg = loadConfig();
-      const msg = verified.reason === 'expired' ? cfg.messages.link_expired : cfg.messages.link_expired;
-      return sendJson(res, 400, { ok: false, error: msg, reason: verified.reason });
-    }
-    try {
-      const result = await recordDecision(verified.applicationId, verified.decision, { decidedBy: 'email_link' });
-      if (!result.ok) return sendJson(res, result.status, { ok: false, error: 'Could not record that decision.' });
-      return sendJson(res, 200, {
-        ok: true,
-        decision: result.decision,
-        already_decided: Boolean(result.alreadyDecided),
-        application_id: verified.applicationId,
-      });
-    } catch (err) {
-      console.error('[decision] failed:', err);
-      return sendJson(res, 500, { ok: false, error: 'Could not record that decision.' });
-    }
-  }
+  // ---- Admin dashboard ----------------------------------------------------
 
-  // GET /api/admin/applications — simple list for the admin (protect in prod).
+  // GET /api/admin/applications — list, newest first, optionally by status.
   if (req.method === 'GET' && p === '/api/admin/applications') {
-    const token = env('ADMIN_API_TOKEN');
-    if (token) {
-      const provided = req.headers['x-admin-token'] ?? url.searchParams.get('token');
-      if (provided !== token) return sendJson(res, 401, { ok: false, error: 'Unauthorised.' });
-    }
+    const auth = requireAdmin(req, url);
+    if (!auth.ok) return sendJson(res, auth.status, { ok: false, error: auth.error });
     const status = url.searchParams.get('status') ?? undefined;
     const store = await getStore();
     const records = await store.list({ status, limit: 200 });
@@ -141,12 +134,55 @@ export async function handleApi(req, res, url) {
         created_at: r.created_at,
         full_name: r.full_name,
         email: r.email,
+        role: r.role,
         role_label: r.role_label,
         status: r.status,
         decision: r.decision,
         decided_at: r.decided_at,
       })),
     });
+  }
+
+  // GET /api/admin/application?id=... — the full application for review.
+  if (req.method === 'GET' && p === '/api/admin/application') {
+    const auth = requireAdmin(req, url);
+    if (!auth.ok) return sendJson(res, auth.status, { ok: false, error: auth.error });
+    const id = url.searchParams.get('id') ?? '';
+    const store = await getStore();
+    const record = await store.get(id);
+    if (!record) return sendJson(res, 404, { ok: false, error: 'Application not found.' });
+    return sendJson(res, 200, { ok: true, application: adminView(record) });
+  }
+
+  // POST /api/admin/decision — approve or reject. Body: { id, decision }.
+  if (req.method === 'POST' && p === '/api/admin/decision') {
+    const auth = requireAdmin(req, url);
+    if (!auth.ok) return sendJson(res, auth.status, { ok: false, error: auth.error });
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch (err) {
+      return sendJson(res, err.status ?? 400, { ok: false, error: err.message });
+    }
+    const id = String(body?.id ?? '');
+    const decision = String(body?.decision ?? '');
+    if (!id) return sendJson(res, 400, { ok: false, error: 'An application id is required.' });
+    try {
+      const result = await recordDecision(id, decision, { decidedBy: 'admin_dashboard' });
+      if (!result.ok) {
+        const msg = result.reason === 'not_found' ? 'Application not found.' : 'That is not a valid decision.';
+        return sendJson(res, result.status, { ok: false, error: msg });
+      }
+      return sendJson(res, 200, {
+        ok: true,
+        decision: result.decision,
+        already_decided: Boolean(result.alreadyDecided),
+        application_id: id,
+      });
+    } catch (err) {
+      console.error('[admin/decision] failed:', err);
+      return sendJson(res, 500, { ok: false, error: 'Could not record that decision.' });
+    }
   }
 
   return false;
@@ -174,7 +210,7 @@ export function serveStatic(req, res, url) {
     return false;
   }
 
-  // Resolve a directory to its index.html, so /status serves public/status/index.html.
+  // Resolve a directory to its index.html, so /admin serves public/admin/index.html.
   if (fs.existsSync(resolved) && fs.statSync(resolved).isDirectory()) {
     resolved = path.join(resolved, 'index.html');
   }

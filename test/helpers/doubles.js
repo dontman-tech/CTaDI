@@ -1,13 +1,15 @@
 /**
- * Test doubles shared across the suite: an in-memory store and a recording
- * mailer. There is no LLM to fake any more — screening is manual, so tests
- * assert on the stored application and the email the admin receives.
+ * Test doubles shared across the suite: an in-memory store that mirrors the
+ * real store contract. There is no LLM and no mailer any more — screening
+ * happens in the admin dashboard, so tests assert on the stored application
+ * and the admin API responses.
  */
 
 /** An in-memory store, so tests never touch the real database. */
 export function makeMemoryStore() {
   const applications = new Map();
   const audit = [];
+  const rateLimits = new Map();
   const clone = (r) => (r ? JSON.parse(JSON.stringify(r)) : null);
   return {
     driver: 'memory',
@@ -48,22 +50,18 @@ export function makeMemoryStore() {
     async auditList(applicationId, limit = 50) {
       return audit.filter((a) => a.application_id === applicationId).slice(-limit).reverse();
     },
+    async rateLimit(key, windowSeconds = 3600) {
+      const now = Date.now();
+      const entry = rateLimits.get(key);
+      if (!entry || now - entry.start >= windowSeconds * 1000) {
+        rateLimits.set(key, { start: now, count: 1 });
+        return 1;
+      }
+      entry.count += 1;
+      return entry.count;
+    },
     async close() {},
     _all: () => [...applications.values()].map(clone),
     _audit: () => audit.slice(),
-  };
-}
-
-/** A mailer that records messages instead of sending them. */
-export function makeRecordingMailer() {
-  const sent = [];
-  return {
-    name: 'recording',
-    isConfigured: () => true,
-    async send(msg) {
-      sent.push(msg);
-      return { id: `rec_${sent.length}` };
-    },
-    sent,
   };
 }

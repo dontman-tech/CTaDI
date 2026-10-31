@@ -1,5 +1,4 @@
 import crypto from 'node:crypto';
-import { env } from './config.js';
 
 export function nowIso() {
   return new Date().toISOString();
@@ -7,14 +6,6 @@ export function nowIso() {
 
 export function newId(prefix = 'app') {
   return `${prefix}_${crypto.randomUUID().replace(/-/g, '').slice(0, 20)}`;
-}
-
-export function randomToken(bytes = 24) {
-  return crypto.randomBytes(bytes).toString('base64url');
-}
-
-export function sha256(input) {
-  return crypto.createHash('sha256').update(input).digest('hex');
 }
 
 /** Constant-time string comparison that never throws on length mismatch. */
@@ -51,7 +42,7 @@ export function isEmail(value) {
   return /^[^\s@]+@[^\s@.]+(\.[^\s@.]+)+$/.test(s);
 }
 
-/** Escape a string for safe interpolation into HTML (emails + portal). */
+/** Escape a string for safe interpolation into HTML. */
 export function escapeHtml(value) {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -59,13 +50,4 @@ export function escapeHtml(value) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
-}
-
-export function approvalSecret() {
-  const secret = env('APPROVAL_TOKEN_SECRET');
-  if (secret) return secret;
-  if (env('NODE_ENV') === 'production') {
-    throw new Error('APPROVAL_TOKEN_SECRET must be set in production');
-  }
-  return 'dev-only-insecure-secret-do-not-use-in-production';
 }

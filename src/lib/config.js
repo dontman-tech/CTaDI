@@ -47,6 +47,12 @@ function validateConfig(c) {
   if (!c.messages?.applicant_received) {
     throw new Error('messages.applicant_received is required in ctadi.config.json');
   }
+  if (!c.messages?.applicant_under_review) {
+    throw new Error('messages.applicant_under_review is required in ctadi.config.json');
+  }
+  if (!c.messages?.applicant_approved || !c.messages?.applicant_rejected) {
+    throw new Error('messages.applicant_approved and messages.applicant_rejected are required in ctadi.config.json');
+  }
   if (!c.portal?.community_invite_url) {
     throw new Error('portal.community_invite_url is required in ctadi.config.json');
   }
