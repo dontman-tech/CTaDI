@@ -17,12 +17,16 @@ function filePath() {
 
 function read() {
   const f = filePath();
-  if (!fs.existsSync(f)) return { applications: [], audit: [] };
+  if (!fs.existsSync(f)) return { applications: [], audit: [], admins: [] };
   try {
     const parsed = JSON.parse(fs.readFileSync(f, 'utf8'));
-    return { applications: parsed.applications ?? [], audit: parsed.audit ?? [] };
+    return {
+      applications: parsed.applications ?? [],
+      audit: parsed.audit ?? [],
+      admins: parsed.admins ?? [],
+    };
   } catch {
-    return { applications: [], audit: [] };
+    return { applications: [], audit: [], admins: [] };
   }
 }
 
@@ -100,6 +104,44 @@ export const jsonStore = {
       .audit.filter((a) => a.application_id === applicationId)
       .slice(-limit)
       .reverse();
+  },
+
+  // ---- Admin accounts -----------------------------------------------------
+
+  async insertAdmin(row) {
+    const data = read();
+    data.admins.push(row);
+    write(data);
+    return row;
+  },
+
+  async listAdmins() {
+    return read().admins.slice();
+  },
+
+  async getAdmin(id) {
+    return read().admins.find((a) => a.id === id) ?? null;
+  },
+
+  async getAdminByHash(tokenHash) {
+    return read().admins.find((a) => a.token_hash === tokenHash) ?? null;
+  },
+
+  async touchAdmin(id, at) {
+    const data = read();
+    const a = data.admins.find((x) => x.id === id);
+    if (!a) return;
+    a.last_used_at = at;
+    write(data);
+  },
+
+  async deleteAdmin(id) {
+    const data = read();
+    const before = data.admins.length;
+    data.admins = data.admins.filter((a) => a.id !== id);
+    if (data.admins.length === before) return false;
+    write(data);
+    return true;
   },
 
   async close() {},

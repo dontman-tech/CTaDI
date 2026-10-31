@@ -34,7 +34,8 @@ if (isMain) {
     console.log(`\nCTaDI onboarding portal listening on http://localhost:${port}`);
     console.log(`  storage driver : ${store.driver}`);
     console.log(`  screening      : manual — review applications in the dashboard`);
-    console.log(`  admin token    : ${env('ADMIN_API_TOKEN') ? 'set' : 'NOT SET (dashboard is open locally only)'}`);
+    console.log(`  master token   : ${env('ADMIN_API_TOKEN') ? 'set' : 'NOT SET (dashboard is open locally only)'}`);
+    console.log(`  admin accounts : ${env('ADMIN_API_TOKEN') ? 'master + any created in the dashboard' : 'n/a locally'}`);
     console.log('  dashboard      : http://localhost:' + port + '/admin\n');
   });
   const shutdown = () => {

@@ -48,6 +48,15 @@ function connect() {
       action     TEXT NOT NULL,
       detail     TEXT
     );
+    CREATE TABLE IF NOT EXISTS admins (
+      id           TEXT PRIMARY KEY,
+      label        TEXT NOT NULL,
+      token_hash   TEXT NOT NULL UNIQUE,
+      token_prefix TEXT,
+      created_at   TEXT NOT NULL,
+      last_used_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_admins_token_hash ON admins(token_hash);
   `);
   return db;
 }
@@ -163,4 +172,55 @@ export const sqliteStore = {
       db = null;
     }
   },
+
+  // ---- Admin accounts -----------------------------------------------------
+
+  async insertAdmin(row) {
+    const d = connect();
+    d.prepare(`
+      INSERT INTO admins (id, label, token_hash, token_prefix, created_at, last_used_at)
+      VALUES (?,?,?,?,?,?)
+    `).run(row.id, row.label, row.token_hash, row.token_prefix ?? null, row.created_at, row.last_used_at ?? null);
+    return adminRow(row);
+  },
+
+  async listAdmins() {
+    const d = connect();
+    const rows = d.prepare('SELECT id, label, token_prefix, created_at, last_used_at FROM admins ORDER BY created_at ASC').all();
+    return rows.map(adminRow);
+  },
+
+  async getAdmin(id) {
+    const d = connect();
+    const row = d.prepare('SELECT * FROM admins WHERE id=?').get(id);
+    return row ? adminRow(row) : null;
+  },
+
+  async getAdminByHash(tokenHash) {
+    const d = connect();
+    const row = d.prepare('SELECT * FROM admins WHERE token_hash=?').get(tokenHash);
+    return row ? adminRow(row) : null;
+  },
+
+  async touchAdmin(id, at) {
+    const d = connect();
+    d.prepare('UPDATE admins SET last_used_at=? WHERE id=?').run(at, id);
+  },
+
+  async deleteAdmin(id) {
+    const d = connect();
+    const info = d.prepare('DELETE FROM admins WHERE id=?').run(id);
+    return info.changes > 0;
+  },
 };
+
+function adminRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    label: row.label,
+    token_prefix: row.token_prefix ?? null,
+    created_at: row.created_at,
+    last_used_at: row.last_used_at ?? null,
+  };
+}

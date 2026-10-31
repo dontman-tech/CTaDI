@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadConfig } from '../src/lib/config.js';
-import { cleanText, escapeHtml, isEmail, safeEqual } from '../src/lib/util.js';
+import { cleanText, escapeHtml, isEmail, safeEqual, hashToken, newAdminToken } from '../src/lib/util.js';
 import { validateSubmission, questionsForRole } from '../src/lib/form.js';
 
 test('config: the organisation, messages, and invite link are present', () => {
@@ -63,6 +63,16 @@ test('util: safeEqual is correct and does not throw on length mismatch', () => {
   assert.ok(!safeEqual('abc', 'abd'));
   assert.ok(!safeEqual('abc', 'abcdef'));
   assert.ok(!safeEqual('abc', ''));
+});
+
+test('util: newAdminToken mints a unique, high-entropy token with a matching hash', () => {
+  const a = newAdminToken();
+  const b = newAdminToken();
+  assert.match(a.token, /^ctadi_[A-Za-z0-9_-]{32}$/, 'token has the expected shape');
+  assert.notEqual(a.token, b.token, 'tokens are unique');
+  assert.equal(a.hash, hashToken(a.token), 'the stored hash matches the token');
+  assert.equal(a.prefix, a.token.slice(0, 12), 'the prefix is a short display handle');
+  assert.notEqual(a.hash, a.token, 'the hash is not the plaintext');
 });
 
 test('form: a complete submission validates and normalises', () => {

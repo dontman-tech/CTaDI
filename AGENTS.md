@@ -60,11 +60,13 @@ must pass with no keys set.
 | `form.json` | The full form: sections, roles, questions |
 | `schema.sql` | The Postgres schema; applied by `npm run migrate` |
 | `src/pipeline.js` | submit → store → review → decide, plus the public and admin views |
+| `src/lib/admins.js` | Master vs ordinary admins: resolve a token, create, list, delete |
 | `src/routes/api.js` | All HTTP routes, including the authenticated admin API |
 | `api/index.js` | Vercel entrypoint: one catch-all serverless function |
 | `vercel.json` | Function config, `/api/*` rewrite, security headers |
 | `src/store/` | `postgres` (Vercel default), `sqlite`, `json` (local default) |
 | `public/` | The portal (form, status) and the admin dashboard (`public/admin/`) |
+| `public/logo.svg`, `public/logo-full.svg` | The CTaDI mark and lockup (palette-coloured SVG) |
 | `samples/applicants.json` | strong, borderline, weak, injection samples |
 | `test/` | The suite; `test/helpers/doubles.js` has the memory store |
 
@@ -81,6 +83,13 @@ must pass with no keys set.
 - **The admin API is the only door to applicant data.** Every `/api/admin/*`
   route goes through `requireAdmin()`. When `ADMIN_API_TOKEN` is unset in
   production the routes must fail closed (`503`), never open.
+- **Two kinds of admin, one rule.** The **master** is `ADMIN_API_TOKEN` from the
+  environment: it always exists, cannot be deleted, and is the only account that
+  may create or delete other admins. **Ordinary admins** live in the `admins`
+  table as SHA-256 token hashes and may review and decide, but every management
+  route must check `role === 'master'` and return `403` otherwise. Store only the
+  hash — never the plaintext token, which is shown to the master exactly once.
+  Keep all of this in `src/lib/admins.js`; routes should not re-implement it.
 - **The public status view must never leak internal detail** — no answers, and
   no invite before approval. See `publicStatus` in `src/pipeline.js`.
 - **Store access is async.** `getStore()` returns a promise and is memoised.
@@ -94,6 +103,11 @@ must pass with no keys set.
 - **Rate limiting lives in the store.** When the driver is `postgres`, use its
   atomic `rateLimit` upsert; the in-process map is only for `json`/`sqlite`. Do
   not add a Redis or third-party limiter.
+- **The palette is defined once.** All colours are CSS custom properties at the
+  top of `public/styles.css` (Deep Charcoal `#0B0D10`, Golden Amber `#F5A642`,
+  Vibrant Orange `#F16B32`, Burnt Orange `#D94D27`, Graphite `#42444A`, Pale Sage
+  `#EAF0DF`). Use the variables, never raw hex, in new markup. The logo lives at
+  `public/logo.svg`; a real asset can replace it without touching the pages.
 
 ## Testing notes
 

@@ -9,16 +9,26 @@
 </head>
 <body>
 <main class="wrap">
-  <header class="brand"><a href="/">CTaDI</a> <span class="muted small">· admin review</span></header>
+  <header class="brand">
+    <a href="/">
+      <img class="logo-mark" src="/logo.svg" alt="" width="38" height="38">
+      <span>
+        <span class="wordmark">CTaDI</span>
+        <span class="tagline">Admin review</span>
+      </span>
+    </a>
+    <span class="who" id="whoami"></span>
+  </header>
 
   <!-- Login: shown until a token is accepted. -->
   <section id="login-card" class="card hidden">
     <h1>Admin review</h1>
-    <p class="lede">Enter the admin token to review applications.</p>
+    <p class="lede">Enter your admin token to review applications.</p>
     <form id="login-form">
       <div class="field">
         <label class="q" for="token">Admin token</label>
         <input type="text" id="token" autocomplete="current-password" required>
+        <span class="hint">Your personal token, or the master token. Ask the master admin if you do not have one.</span>
       </div>
       <button type="submit">Open the dashboard</button>
     </form>
@@ -28,7 +38,7 @@
   <!-- List view -->
   <section id="list-view" class="hidden">
     <div class="admin-bar">
-      <h1 style="margin:0;font-size:22px;">Applications</h1>
+      <h1>Applications</h1>
       <span class="spacer"></span>
       <select id="filter" aria-label="Filter by status">
         <option value="">All</option>
@@ -36,7 +46,8 @@
         <option value="approved">Approved</option>
         <option value="rejected">Rejected</option>
       </select>
-      <button class="btn small" id="refresh" type="button">Refresh</button>
+      <button class="btn small ghost" id="refresh" type="button">Refresh</button>
+      <button class="btn small ghost hidden" id="manage-admins" type="button">Admins</button>
       <button class="btn small ghost" id="signout" type="button">Sign out</button>
     </div>
     <div id="list-error" class="notice error hidden" role="alert"></div>
@@ -52,6 +63,49 @@
       <button class="btn small ghost" id="back" type="button">← Back to list</button>
     </div>
     <div id="detail-body"></div>
+  </section>
+
+  <!-- Admin management (master only) -->
+  <section id="admins-view" class="hidden">
+    <div class="admin-bar">
+      <h1>Admin accounts</h1>
+      <span class="spacer"></span>
+      <button class="btn small ghost" id="admins-back" type="button">← Back to list</button>
+    </div>
+    <div id="admins-error" class="notice error hidden" role="alert"></div>
+
+    <div class="card">
+      <h2>Create an admin</h2>
+      <p class="hint">
+        Give the new admin a name, then hand them the token that appears. They can review
+        applications but cannot create or delete admins — only you, the master, can.
+      </p>
+      <form id="create-admin-form" class="create-form">
+        <div class="field">
+          <label class="q" for="new-admin-label">Name</label>
+          <input type="text" id="new-admin-label" placeholder="e.g. Ama — reviewer" maxlength="80" required>
+        </div>
+        <button type="submit" id="create-admin-btn">Create admin</button>
+      </form>
+      <div id="new-token" class="token-reveal hidden" aria-live="polite"></div>
+    </div>
+
+    <div class="card">
+      <h2>Current admins</h2>
+      <table class="admin-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th class="hide-sm">Role</th>
+            <th class="hide-sm">Token</th>
+            <th class="hide-sm">Last used</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="admin-rows"></tbody>
+      </table>
+      <p class="empty hidden" id="admins-empty">No admin accounts yet.</p>
+    </div>
   </section>
 </main>
 <script src="/admin/admin.js"></script>

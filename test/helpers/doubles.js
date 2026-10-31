@@ -10,6 +10,7 @@ export function makeMemoryStore() {
   const applications = new Map();
   const audit = [];
   const rateLimits = new Map();
+  const admins = new Map();
   const clone = (r) => (r ? JSON.parse(JSON.stringify(r)) : null);
   return {
     driver: 'memory',
@@ -61,7 +62,29 @@ export function makeMemoryStore() {
       return entry.count;
     },
     async close() {},
+    // ---- Admin accounts (mirrors the real store contract) ----
+    async insertAdmin(row) {
+      admins.set(row.id, clone(row));
+      return clone(row);
+    },
+    async listAdmins() {
+      return [...admins.values()].map(clone);
+    },
+    async getAdmin(id) {
+      return clone(admins.get(id));
+    },
+    async getAdminByHash(tokenHash) {
+      return clone([...admins.values()].find((a) => a.token_hash === tokenHash));
+    },
+    async touchAdmin(id, at) {
+      const a = admins.get(id);
+      if (a) admins.set(id, { ...a, last_used_at: at });
+    },
+    async deleteAdmin(id) {
+      return admins.delete(id);
+    },
     _all: () => [...applications.values()].map(clone),
     _audit: () => audit.slice(),
+    _admins: () => [...admins.values()].map(clone),
   };
 }

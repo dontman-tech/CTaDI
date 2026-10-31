@@ -42,3 +42,17 @@ CREATE TABLE IF NOT EXISTS rate_limits (
   window_start TIMESTAMPTZ NOT NULL DEFAULT now(),
   count        INTEGER NOT NULL DEFAULT 0
 );
+
+-- Ordinary admin accounts, created by the master admin (the ADMIN_API_TOKEN
+-- in the environment). Only the SHA-256 hash of a token is stored, never the
+-- token itself; the plaintext is shown once, at creation.
+CREATE TABLE IF NOT EXISTS admins (
+  id           TEXT PRIMARY KEY,
+  label        TEXT NOT NULL,
+  token_hash   TEXT NOT NULL UNIQUE,
+  token_prefix TEXT,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_used_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_admins_token_hash ON admins (token_hash);

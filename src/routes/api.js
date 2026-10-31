@@ -2,10 +2,10 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { loadConfig, env, ROOT } from '../lib/config.js';
 import { sendJson, sendHtml, readJsonBody, checkRateLimit, clientIp } from '../lib/http.js';
-import { safeEqual } from '../lib/util.js';
 import { getStore } from '../store/index.js';
 import { submitApplication, recordDecision, publicStatus, adminView } from '../pipeline.js';
 import { roleOptions } from '../lib/form.js';
+import { resolveAdmin, listAdmins, createAdmin, deleteAdmin, touchAdmin } from '../lib/admins.js';
 
 /** Public form definition, with internal notes stripped. */
 function publicForm() {
@@ -36,27 +36,38 @@ function publicForm() {
 }
 
 /**
- * Admin authentication. The dashboard is the only route into applicant data,
- * so it is gated on a shared secret sent as `X-Admin-Token`.
+ * Admin authentication.
+ *
+ * The dashboard is the only route into applicant data, so every /api/admin/*
+ * call is gated. A presented token is resolved against the master token (from
+ * `ADMIN_API_TOKEN`) and the stored ordinary-admin tokens, and the result is
+ * attached as `auth.admin` so a route can tell a master from an ordinary admin.
  *
  * In production a token is mandatory: without one the dashboard would be open
- * to anyone who found the URL, and the whole point of the portal is that only
- * the admin reads applications. Locally, with no token set, access is allowed
- * so development needs no setup.
+ * to anyone who found the URL. Locally, with no token set, access is allowed so
+ * development needs no setup — and the local caller is treated as the master.
  */
-function requireAdmin(req, url) {
-  const expected = env('ADMIN_API_TOKEN');
-  if (!expected) {
+async function requireAdmin(req, url) {
+  const store = await getStore();
+  const provided = req.headers['x-admin-token'] ?? url.searchParams.get('token') ?? '';
+
+  const configured = Boolean(env('ADMIN_API_TOKEN'));
+  if (!configured) {
     if (env('NODE_ENV') === 'production' || env('VERCEL')) {
       return { ok: false, status: 503, error: 'ADMIN_API_TOKEN is not configured. Set it to use the admin dashboard.' };
     }
-    return { ok: true, admin: 'dev-no-token' };
+    return { ok: true, admin: { id: 'master', label: 'Master admin', role: 'master' } };
   }
-  const provided = req.headers['x-admin-token'] ?? url.searchParams.get('token') ?? '';
-  if (!provided || !safeEqual(String(provided), String(expected))) {
-    return { ok: false, status: 401, error: 'Unauthorised.' };
-  }
-  return { ok: true, admin: 'token' };
+
+  const admin = await resolveAdmin(store, provided ? String(provided) : '');
+  if (!admin) return { ok: false, status: 401, error: 'Unauthorised.' };
+  return { ok: true, admin };
+}
+
+/** Guard that a route is only reachable by the master admin. */
+function requireMaster(auth) {
+  if (auth.admin?.role === 'master') return null;
+  return { ok: false, status: 403, error: 'Only the master admin can manage admin accounts.' };
 }
 
 export async function handleApi(req, res, url) {
@@ -121,7 +132,7 @@ export async function handleApi(req, res, url) {
 
   // GET /api/admin/applications — list, newest first, optionally by status.
   if (req.method === 'GET' && p === '/api/admin/applications') {
-    const auth = requireAdmin(req, url);
+    const auth = await requireAdmin(req, url);
     if (!auth.ok) return sendJson(res, auth.status, { ok: false, error: auth.error });
     const status = url.searchParams.get('status') ?? undefined;
     const store = await getStore();
@@ -145,7 +156,7 @@ export async function handleApi(req, res, url) {
 
   // GET /api/admin/application?id=... — the full application for review.
   if (req.method === 'GET' && p === '/api/admin/application') {
-    const auth = requireAdmin(req, url);
+    const auth = await requireAdmin(req, url);
     if (!auth.ok) return sendJson(res, auth.status, { ok: false, error: auth.error });
     const id = url.searchParams.get('id') ?? '';
     const store = await getStore();
@@ -154,9 +165,64 @@ export async function handleApi(req, res, url) {
     return sendJson(res, 200, { ok: true, application: adminView(record) });
   }
 
+  // GET /api/admin/me — who am I, so the dashboard can show the right controls.
+  if (req.method === 'GET' && p === '/api/admin/me') {
+    const auth = await requireAdmin(req, url);
+    if (!auth.ok) return sendJson(res, auth.status, { ok: false, error: auth.error });
+    await touchAdmin(await getStore(), auth.admin);
+    return sendJson(res, 200, { ok: true, admin: auth.admin });
+  }
+
+  // ---- Admin accounts (master only) ---------------------------------------
+
+  // GET /api/admin/admins — list admin accounts.
+  if (req.method === 'GET' && p === '/api/admin/admins') {
+    const auth = await requireAdmin(req, url);
+    if (!auth.ok) return sendJson(res, auth.status, { ok: false, error: auth.error });
+    const denied = requireMaster(auth);
+    if (denied) return sendJson(res, denied.status, { ok: false, error: denied.error });
+    const store = await getStore();
+    return sendJson(res, 200, { ok: true, admins: await listAdmins(store) });
+  }
+
+  // POST /api/admin/admins — create an ordinary admin. Body: { label }.
+  if (req.method === 'POST' && p === '/api/admin/admins') {
+    const auth = await requireAdmin(req, url);
+    if (!auth.ok) return sendJson(res, auth.status, { ok: false, error: auth.error });
+    const denied = requireMaster(auth);
+    if (denied) return sendJson(res, denied.status, { ok: false, error: denied.error });
+    let body;
+    try {
+      body = await readJsonBody(req);
+    } catch (err) {
+      return sendJson(res, err.status ?? 400, { ok: false, error: err.message });
+    }
+    const store = await getStore();
+    const result = await createAdmin(store, { label: body?.label });
+    if (!result.ok) return sendJson(res, result.status, { ok: false, error: result.error });
+    await store.audit(null, 'admin_created', { by: auth.admin.id, admin: result.admin.id, label: result.admin.label });
+    // The token is returned exactly once and never stored in plaintext.
+    return sendJson(res, 201, { ok: true, admin: result.admin, token: result.token });
+  }
+
+  // DELETE /api/admin/admins?id=... — delete an ordinary admin.
+  if (req.method === 'DELETE' && p === '/api/admin/admins') {
+    const auth = await requireAdmin(req, url);
+    if (!auth.ok) return sendJson(res, auth.status, { ok: false, error: auth.error });
+    const denied = requireMaster(auth);
+    if (denied) return sendJson(res, denied.status, { ok: false, error: denied.error });
+    const id = url.searchParams.get('id') ?? '';
+    if (!id) return sendJson(res, 400, { ok: false, error: 'An admin id is required.' });
+    const store = await getStore();
+    const result = await deleteAdmin(store, id);
+    if (!result.ok) return sendJson(res, result.status, { ok: false, error: result.error });
+    await store.audit(null, 'admin_deleted', { by: auth.admin.id, admin: id });
+    return sendJson(res, 200, { ok: true, deleted: id });
+  }
+
   // POST /api/admin/decision — approve or reject. Body: { id, decision }.
   if (req.method === 'POST' && p === '/api/admin/decision') {
-    const auth = requireAdmin(req, url);
+    const auth = await requireAdmin(req, url);
     if (!auth.ok) return sendJson(res, auth.status, { ok: false, error: auth.error });
     let body;
     try {
@@ -168,7 +234,8 @@ export async function handleApi(req, res, url) {
     const decision = String(body?.decision ?? '');
     if (!id) return sendJson(res, 400, { ok: false, error: 'An application id is required.' });
     try {
-      const result = await recordDecision(id, decision, { decidedBy: 'admin_dashboard' });
+      const decidedBy = auth.admin.role === 'master' ? 'master' : auth.admin.label;
+      const result = await recordDecision(id, decision, { decidedBy });
       if (!result.ok) {
         const msg = result.reason === 'not_found' ? 'Application not found.' : 'That is not a valid decision.';
         return sendJson(res, result.status, { ok: false, error: msg });

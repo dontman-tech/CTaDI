@@ -29,6 +29,7 @@ There is no framework, no build step, and no service other than those two.
 5. [Test plan](#5-test-plan)
 6. [Configuration reference](#6-configuration-reference)
 7. [Security notes](#7-security-notes)
+8. [Brand and palette](#8-brand-and-palette)
 
 ---
 
@@ -43,6 +44,7 @@ There is no framework, no build step, and no service other than those two.
    admin      ──────►  admin dashboard      │
    (browser)        │  public/admin/        │
                     │  index.html · admin.js│
+                    │  master + reviewers   │
                     └───────────┬───────────┘
                                 │  X-Admin-Token
                     ┌───────────▼──────────────────────────────────────┐
@@ -50,18 +52,24 @@ There is no framework, no build step, and no service other than those two.
                     │   /api/form                  form definition      │
                     │   /api/submit    validate → store                 │
                     │   /api/status    public status view               │
+                    │   /api/admin/me             who am I (any admin)  │
                     │   /api/admin/applications   list  (auth required) │
                     │   /api/admin/application    detail (auth required)│
                     │   /api/admin/decision       approve / reject      │
+                    │   /api/admin/admins  GET/POST/DELETE (master only)│
                     │   /api/health                diagnostics          │
                     └───────────┬──────────────────────────────────────┘
                                 │
-                    ┌───────────▼───────────────────────────┐
-                    │  Postgres (Neon, via the Vercel       │
-                    │  Marketplace)                         │
-                    │  applications · audit_log · rate_limits │
-                    └───────────────────────────────────────┘
+                    ┌───────────▼───────────────────────────────────────┐
+                    │  Postgres (Neon, via the Vercel Marketplace)      │
+                    │  applications · audit_log · rate_limits · admins  │
+                    └───────────────────────────────────────────────────┘
 ```
+
+The **master admin** is the `ADMIN_API_TOKEN` in the environment — it always
+exists and is the only account that can create and delete the others. **Ordinary
+admins** live in the `admins` table as token hashes, and can review applications
+but not manage accounts.
 
 ### Why this stack
 
@@ -211,7 +219,7 @@ game the form by writing "5".
 ```
 ctadi.config.json      organisation details and every applicant-facing message
 form.json              the full form: sections, roles, questions
-schema.sql             the Postgres schema (applications, audit_log, rate_limits)
+schema.sql             the Postgres schema (applications, audit_log, rate_limits, admins)
 package.json           scripts and one dependency: @neondatabase/serverless
 
 api/
@@ -222,7 +230,8 @@ src/
   lib/
     config.js          loads and validates the config files
     form.js            form lookup, submission validation and normalisation
-    util.js            text cleaning, HTML escaping, constant-time compare
+    admins.js          master vs ordinary admins; create, resolve, delete
+    util.js            text cleaning, HTML escaping, token minting, constant-time compare
     http.js            JSON helpers, body reader, rate limiter
   store/
     index.js           driver selection
@@ -235,7 +244,9 @@ public/
   status/index.html     the applicant status page
   status.js             the script that page loads
   admin/index.html      the admin dashboard shell
-  admin/admin.js        login, list, detail, and the decision buttons
+  admin/admin.js        login, list, detail, decisions, and admin management
+  logo.svg              the CTaDI mark
+  logo-full.svg         the CTaDI lockup (mark + wordmark)
   styles.css            one stylesheet for the portal and the dashboard
 
 vercel.json            Vercel function config, rewrites, and security headers
@@ -277,13 +288,15 @@ You should see:
 CTaDI onboarding portal listening on http://localhost:3000
   storage driver : json
   screening      : manual — review applications in the dashboard
-  admin token    : NOT SET (dashboard is open locally only)
+  master token   : NOT SET (dashboard is open locally only)
+  admin accounts : n/a locally
   dashboard      : http://localhost:3000/admin
 ```
 
 Submit the form, then open `/admin`. Locally, with no `ADMIN_API_TOKEN` set,
-the dashboard opens without a token so development needs no setup. Set
-`ADMIN_API_TOKEN` in `.env` at any point to require one.
+the dashboard opens without a token so development needs no setup, and you are
+treated as the master. Set `ADMIN_API_TOKEN` in `.env` at any point to require
+one — that token then becomes the master admin.
 
 ### Option B — deploy to Vercel (production)
 
@@ -329,7 +342,7 @@ Variables:
 
 | Variable | Value |
 |---|---|
-| `ADMIN_API_TOKEN` | protects the dashboard. **Required in production.** Generate with `node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))"` |
+| `ADMIN_API_TOKEN` | the **master** admin token; protects the dashboard and is the only account that can create or delete other admins. **Required in production.** Generate with `node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))"` |
 | `COMMUNITY_INVITE_URL` | the invite link approved applicants see |
 | `PUBLIC_BASE_URL` | your production URL, e.g. `https://ctadi.vercel.app` |
 
@@ -350,12 +363,13 @@ the form once and confirm it appears at `https://your-app.vercel.app/admin`.
 
 ### Managing applications
 
-- **Review:** open `/admin`, enter the admin token, and pick an application.
+- **Review:** open `/admin`, enter your admin token, and pick an application.
   The list defaults to those awaiting review; the filter switches to approved or
   rejected.
 - **Decide:** Approve reveals the community invite on the applicant's status
   page. Reject shows a polite closing message. A decision is recorded once — a
-  second click reports the existing decision rather than flipping it.
+  second click reports the existing decision rather than flipping it. The
+  decision records *who* made it, so the audit trail names the reviewer.
 - **List over HTTP:**
 
   ```bash
@@ -369,6 +383,41 @@ the form once and confirm it appears at `https://your-app.vercel.app/admin`.
   npm run sample            # all samples
   npm run sample strong     # just one
   ```
+
+### Managing admins (master only)
+
+There are two kinds of admin, and the difference is who can manage accounts.
+
+- The **master admin** is the token in `ADMIN_API_TOKEN`. It always exists,
+  cannot be edited or deleted, and is the only account that can create and
+  delete the others. Keeping it in the environment means you can always get back
+  in, even if the `admins` table is lost.
+- **Ordinary admins** are created by the master from the dashboard. They sign
+  in with their own token, review applications, and approve or reject — but they
+  cannot create or delete admins. The **Admins** button is only shown to the
+  master.
+
+To add a reviewer: open `/admin` as the master, click **Admins**, type a name,
+and click **Create admin**. A token appears **once** — copy it and send it to
+that person. Only a SHA-256 hash of the token is stored, so it cannot be
+retrieved later; if it is lost, delete the account and create a new one. To
+revoke access, click **Delete** on that row — their token stops working
+immediately.
+
+The same three operations over HTTP (master token required):
+
+```bash
+# List admins
+curl -H "X-Admin-Token: $ADMIN_API_TOKEN" "$PUBLIC_BASE_URL/api/admin/admins"
+
+# Create an admin — the response contains the one-time token
+curl -X POST -H "X-Admin-Token: $ADMIN_API_TOKEN" -H 'content-type: application/json' \
+  -d '{"label":"Ama — reviewer"}' "$PUBLIC_BASE_URL/api/admin/admins"
+
+# Delete an admin
+curl -X DELETE -H "X-Admin-Token: $ADMIN_API_TOKEN" \
+  "$PUBLIC_BASE_URL/api/admin/admins?id=adm_…"
+```
 
 ### Deploying elsewhere
 
@@ -388,7 +437,7 @@ Run the whole suite with:
 npm test
 ```
 
-All 54 tests pass with no network access, no API keys, no accounts, and no
+All 64 tests pass with no network access, no API keys, no accounts, and no
 database. The suite uses an in-memory store, and the HTTP and e2e tests drive
 the real server over a real socket.
 
@@ -397,10 +446,11 @@ the real server over a real socket.
 | Area | Tests |
 |---|---|
 | Config | the organisation, messages, and invite link are present; no scoring configuration remains; no email configuration remains; every role has a full question set |
-| Text handling | control characters stripped; length capped; HTML escaped; email validation; constant-time compare |
+| Text handling | control characters stripped; length capped; HTML escaped; email validation; constant-time compare; admin tokens are unique, high-entropy, and hash to their stored digest |
 | Form | a complete submission validates and normalises; missing answers are reported; consent, email, and role are checked; instruction-shaped answers are stored verbatim |
 | Pipeline | a submission is stored as `pending_review`; nothing is emailed; duplicates are refused while pending and allowed after a decision; approve reveals the invite; reject closes politely; approve is idempotent; a decision cannot be flipped; an unknown id 404s; a bad verb 400s; the audit trail is written; `adminView` returns the full application and the review state |
 | HTTP | health, form, index, and `/admin` routes; invalid submissions rejected; valid submissions accepted; the status view never leaks answers or the invite before a decision; the admin API requires a token on list, detail, and decision; the full review flow over HTTP; directory traversal blocked; the removed email-era endpoints return 404 |
+| Admin accounts | `/api/admin/me` identifies master vs ordinary; the master is always listed first; the master can create an admin whose token then works, with the plaintext stored nowhere; an ordinary admin can approve and the decision records their name; an ordinary admin gets `403` on every management route; a created token stops working once deleted; the master cannot be deleted; management is closed without a token |
 | End-to-end | a submission waits in the dashboard; the admin reads it in full; approve reveals the invite; reject closes politely; the invite never leaks before a decision; an embedded instruction is delivered verbatim and changes nothing |
 
 ### The four sample applicants
@@ -469,7 +519,7 @@ See `.env.example` for the annotated list. The important ones:
 
 | Variable | Purpose |
 |---|---|
-| `ADMIN_API_TOKEN` | Protects `/admin` and every `/api/admin/*` route. **Required in production** |
+| `ADMIN_API_TOKEN` | The **master** admin token. Protects `/admin` and every `/api/admin/*` route, and is the only account that can create or delete other admins. **Required in production** |
 | `DATABASE_URL` | Postgres connection string. Set automatically by the Vercel Marketplace integration |
 | `STORAGE_DRIVER` | `postgres`, `sqlite`, or `json`. Unset → `postgres` on Vercel, `json` locally |
 | `COMMUNITY_INVITE_URL` | The link an approved applicant sees |
@@ -487,10 +537,25 @@ and never appears in the repository.
 
 **The dashboard is the only door to applicant data, and it is locked.** `/admin`
 is a static shell that carries no data; every `/api/admin/*` call is
-authenticated with `ADMIN_API_TOKEN`, compared in constant time. On Vercel, if
-the token is unset the routes return `503` rather than serving anything — a
-misconfiguration fails closed. The token is kept in `sessionStorage`, so it does
-not survive a browser restart and is never placed in a URL.
+authenticated. A presented token is checked against the master token
+(`ADMIN_API_TOKEN`) and against the stored hashes of the ordinary admins. Both
+comparisons are constant-time. On Vercel, if the master token is unset the routes
+return `503` rather than serving anything — a misconfiguration fails closed. The
+token is kept in `sessionStorage`, so it does not survive a browser restart and
+is never placed in a URL.
+
+**Admin tokens are stored as hashes.** When the master creates an ordinary admin,
+the server mints a 192-bit random token, stores only its SHA-256 hash, and shows
+the plaintext once. A database leak therefore does not hand over usable tokens.
+Because a token is high-entropy random — not a chosen password — a fast hash is
+the right choice: there is nothing to brute-force, and a slow KDF would only add
+latency to every request. Deleting an admin deletes the hash, so the token stops
+working at once.
+
+**Only the master manages admins.** The `POST` and `DELETE` admin routes check
+that the caller is the master and return `403` otherwise, so an ordinary admin
+cannot create accounts or revoke a colleague. The master itself is not a database
+row and cannot be deleted, so the owner can never lock themselves out.
 
 **No AI means no prompt injection.** There is no model to instruct, so an
 applicant cannot write their way past a reviewer by embedding instructions in an
@@ -526,6 +591,46 @@ already drained — reading it would hang the request.
 applicants that a human reads every application (the form already asks for
 consent to this), keep the retention period as short as your review process
 allows, and restrict access to the admin token.
+
+---
+
+## 8. Brand and palette
+
+The portal uses the CTaDI colour scheme throughout. The palette lives in one
+place — the custom properties at the top of `public/styles.css` — so a change
+there restyles every page.
+
+| Colour | Hex | Role |
+|---|---|---|
+| Deep Charcoal Black | `#0B0D10` | Page canvas, and ink on light surfaces |
+| Golden Amber | `#F5A642` | Gradient start, focus rings, highlights |
+| Vibrant Orange | `#F16B32` | Gradient middle, primary accent, links |
+| Burnt Orange | `#D94D27` | Gradient end, section tags, reject action |
+| Graphite Grey | `#42444A` | Borders, secondary text, secondary surfaces |
+| Pale Sage / Off-White | `#EAF0DF` | Light card surfaces, body text on dark |
+
+The signature gradient runs **Golden Amber → Vibrant Orange → Burnt Orange**:
+
+```css
+--gradient: linear-gradient(90deg, #F5A642 0%, #F16B32 52%, #D94D27 100%);
+```
+
+It is applied to primary buttons, the card top rule, the master-admin pill, and
+the logo. Dark charcoal is the page canvas; pale sage is the light card surface.
+
+### The logo
+
+Two SVGs live in `public/`:
+
+- `logo.svg` — the square mark, used in the header of every page.
+- `logo-full.svg` — the horizontal lockup (mark + wordmark + tagline), for
+  places where the name should read alongside the mark.
+
+Both are drawn from the palette above, so they sit correctly on the charcoal
+background. **If you have an official CTaDI logo file, drop it in as
+`public/logo.svg`** (and `public/logo-full.svg` for the lockup) — the pages
+reference those paths and need no other change. Keep the mark square and around
+`38px` tall so the header stays balanced.
 
 ---
 

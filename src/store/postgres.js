@@ -17,6 +17,7 @@ import { env } from '../lib/config.js';
  *                decided_by)
  *   audit_log(id, at, application_id, action, detail)
  *   rate_limits(key, window_start, count)
+ *   admins(id, label, token_hash, token_prefix, created_at, last_used_at)
  */
 
 let sql = null;
@@ -159,7 +160,63 @@ export const postgresStore = {
     return Number(rows[0]?.count ?? 0);
   },
 
+  // ---- Admin accounts -----------------------------------------------------
+
+  async insertAdmin(row) {
+    const q = connect();
+    const rows = await q`
+      INSERT INTO admins (id, label, token_hash, token_prefix, created_at, last_used_at)
+      VALUES (${row.id}, ${row.label}, ${row.token_hash}, ${row.token_prefix ?? null},
+              ${row.created_at}, ${row.last_used_at ?? null})
+      RETURNING id, label, token_prefix, created_at, last_used_at
+    `;
+    return adminRow(rows[0]);
+  },
+
+  async listAdmins() {
+    const q = connect();
+    const rows = await q`
+      SELECT id, label, token_prefix, created_at, last_used_at
+      FROM admins ORDER BY created_at ASC
+    `;
+    return rows.map(adminRow);
+  },
+
+  async getAdmin(id) {
+    const q = connect();
+    const rows = await q`SELECT * FROM admins WHERE id = ${id} LIMIT 1`;
+    return rows[0] ? adminRow(rows[0]) : null;
+  },
+
+  async getAdminByHash(tokenHash) {
+    const q = connect();
+    const rows = await q`SELECT * FROM admins WHERE token_hash = ${tokenHash} LIMIT 1`;
+    return rows[0] ? adminRow(rows[0]) : null;
+  },
+
+  async touchAdmin(id, at) {
+    const q = connect();
+    await q`UPDATE admins SET last_used_at = ${at} WHERE id = ${id}`;
+  },
+
+  async deleteAdmin(id) {
+    const q = connect();
+    const rows = await q`DELETE FROM admins WHERE id = ${id} RETURNING id`;
+    return rows.length > 0;
+  },
+
   async close() {
     sql = null;
   },
 };
+
+function adminRow(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    label: row.label,
+    token_prefix: row.token_prefix ?? null,
+    created_at: toIso(row.created_at),
+    last_used_at: toIso(row.last_used_at),
+  };
+}

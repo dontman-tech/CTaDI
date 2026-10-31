@@ -246,3 +246,101 @@ test('static serving refuses directory traversal', async () => {
   const res = await fetch(`${base}/../package.json`);
   assert.notEqual(res.status, 200);
 });
+
+// ---- Admin accounts -------------------------------------------------------
+
+test('GET /api/admin/me reports the master admin', async () => {
+  const { status, json } = await req('GET', '/api/admin/me', undefined, admin);
+  assert.equal(status, 200);
+  assert.equal(json.admin.role, 'master');
+});
+
+test('the master can list admins, and the master is always first', async () => {
+  const { status, json } = await req('GET', '/api/admin/admins', undefined, admin);
+  assert.equal(status, 200);
+  assert.equal(json.ok, true);
+  assert.equal(json.admins[0].role, 'master');
+  assert.equal(json.admins[0].id, 'master');
+});
+
+test('the master can create an admin, whose token then works and is never stored in plaintext', async () => {
+  const created = await req('POST', '/api/admin/admins', { label: 'Ama — reviewer' }, admin);
+  assert.equal(created.status, 201);
+  assert.equal(created.json.ok, true);
+  assert.match(created.json.token, /^ctadi_/);
+  assert.equal(created.json.admin.label, 'Ama — reviewer');
+  assert.equal(created.json.admin.role, 'admin');
+  assert.equal(created.json.admin.token_hash, undefined, 'the hash is never returned');
+
+  // The plaintext token is not anywhere in the store; only its hash is.
+  const stored = store._admins().find((a) => a.id === created.json.admin.id);
+  assert.ok(stored.token_hash, 'a hash is stored');
+  assert.notEqual(stored.token_hash, created.json.token, 'the plaintext is not stored');
+  assert.equal(JSON.stringify(store._admins()).includes(created.json.token), false, 'plaintext appears nowhere');
+
+  // The new token authenticates, and identifies as an ordinary admin.
+  const who = await req('GET', '/api/admin/me', undefined, { 'x-admin-token': created.json.token });
+  assert.equal(who.status, 200);
+  assert.equal(who.json.admin.role, 'admin');
+  assert.equal(who.json.admin.label, 'Ama — reviewer');
+
+  // And it can do the day job: read the list and decide an application.
+  const list = await req('GET', '/api/admin/applications', undefined, { 'x-admin-token': created.json.token });
+  assert.equal(list.status, 200);
+});
+
+test('an ordinary admin can approve, and the decision records their name', async () => {
+  const created = await req('POST', '/api/admin/admins', { label: 'Kofi' }, admin);
+  const reviewer = { 'x-admin-token': created.json.token };
+
+  const app = await req('POST', '/api/submit', payload('research', `by-admin-${Date.now()}@example.com`));
+  const decided = await req('POST', '/api/admin/decision', { id: app.json.application_id, decision: 'approve' }, reviewer);
+  assert.equal(decided.status, 200);
+  assert.equal(decided.json.decision, 'approved');
+
+  const detail = await req('GET', `/api/admin/application?id=${app.json.application_id}`, undefined, admin);
+  assert.equal(detail.json.application.decided_by, 'Kofi');
+});
+
+test('an ordinary admin cannot manage other admins', async () => {
+  const created = await req('POST', '/api/admin/admins', { label: 'Read-only' }, admin);
+  const reviewer = { 'x-admin-token': created.json.token };
+
+  assert.equal((await req('GET', '/api/admin/admins', undefined, reviewer)).status, 403);
+  assert.equal((await req('POST', '/api/admin/admins', { label: 'x' }, reviewer)).status, 403);
+  assert.equal((await req('DELETE', `/api/admin/admins?id=${created.json.admin.id}`, undefined, reviewer)).status, 403);
+});
+
+test('creating an admin requires a name', async () => {
+  const { status, json } = await req('POST', '/api/admin/admins', { label: '   ' }, admin);
+  assert.equal(status, 400);
+  assert.equal(json.ok, false);
+});
+
+test('the master can delete an admin, whose token then stops working', async () => {
+  const created = await req('POST', '/api/admin/admins', { label: 'Temporary' }, admin);
+  const temp = { 'x-admin-token': created.json.token };
+  assert.equal((await req('GET', '/api/admin/applications', undefined, temp)).status, 200);
+
+  const del = await req('DELETE', `/api/admin/admins?id=${created.json.admin.id}`, undefined, admin);
+  assert.equal(del.status, 200);
+  assert.equal(del.json.deleted, created.json.admin.id);
+  assert.equal((await req('GET', '/api/admin/applications', undefined, temp)).status, 401);
+});
+
+test('the master admin cannot be deleted', async () => {
+  const { status, json } = await req('DELETE', '/api/admin/admins?id=master', undefined, admin);
+  assert.equal(status, 400);
+  assert.equal(json.ok, false);
+});
+
+test('deleting an unknown admin 404s', async () => {
+  const { status } = await req('DELETE', '/api/admin/admins?id=adm_nope', undefined, admin);
+  assert.equal(status, 404);
+});
+
+test('admin management is closed without a token', async () => {
+  assert.equal((await req('GET', '/api/admin/admins')).status, 401);
+  assert.equal((await req('POST', '/api/admin/admins', { label: 'x' })).status, 401);
+  assert.equal((await req('DELETE', '/api/admin/admins?id=x')).status, 401);
+});
